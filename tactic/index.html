@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>SAKURA Group | 戦術ボード</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- ヘッダー -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="brand">SAKURA Group</h1>
+        <span id="sync-badge" class="sync-badge" title="保存状態">ローカル</span>
+      </div>
+
+      <div class="mode-tabs" role="tablist" aria-label="モード切替">
+        <button type="button" class="mode-tab active" data-mode="attack" role="tab">攻撃</button>
+        <button type="button" class="mode-tab" data-mode="defense" role="tab">守備</button>
+        <button type="button" class="mode-tab" data-mode="free" role="tab">自由</button>
+      </div>
+
+      <div class="mode-copy-wrap edit-only">
+        <button type="button" class="mode-copy-btn" id="btn-copy-formation" aria-expanded="false" aria-haspopup="true" title="陣形を他モードへコピー">
+          陣形コピー
+        </button>
+        <div id="copy-formation-menu" class="copy-formation-menu" hidden role="menu">
+          <!-- 開いているモードから他モードへのみ（JSで生成） -->
+        </div>
+      </div>
+
+      <div class="header-center-tools" aria-label="編集操作">
+        <button type="button" class="icon-btn" id="btn-undo" title="元に戻す" disabled>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
+        </button>
+        <button type="button" class="icon-btn" id="btn-redo" title="やり直す" disabled>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg>
+        </button>
+        <button type="button" class="icon-btn danger" id="btn-clear-draw" title="描画全消去">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        </button>
+        <span class="header-tools-sep"></span>
+        <button type="button" class="icon-btn" id="btn-zoom-out" title="縮小">−</button>
+        <button type="button" class="icon-btn zoom-label" id="btn-zoom-reset" title="100%に戻す">100%</button>
+        <button type="button" class="icon-btn" id="btn-zoom-in" title="拡大">+</button>
+        <span class="header-tools-sep"></span>
+        <button type="button" class="icon-btn" id="btn-toggle-draw" title="描画を非表示" aria-pressed="true">
+          <svg class="icon-draw-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg class="icon-draw-hide" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+            <path d="M1 1l22 22"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="header-right">
+        <button type="button" id="btn-present" class="icon-btn" title="説明モード" aria-label="説明モード">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+        <button type="button" id="btn-exit-present" class="btn-text present-only" title="説明モード終了">終了</button>
+      </div>
+    </header>
+
+    <div class="main">
+      <section class="board-area">
+        <button type="button" class="edge-toggle left edit-chrome" id="btn-expand-tools" title="ツールを表示" hidden>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"/>
+            <path d="M9 4v16"/>
+            <path d="M13 9l3 3-3 3"/>
+          </svg>
+        </button>
+        <button type="button" class="edge-toggle right edit-chrome" id="btn-expand-bench" title="ベンチを表示" hidden>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"/>
+            <path d="M15 4v16"/>
+            <path d="M11 9l-3 3 3 3"/>
+          </svg>
+        </button>
+
+        <div id="board-viewport" class="board-viewport">
+          <div id="board-stage" class="board-stage">
+            <img id="court-img" class="court-img" src="assets/court.jpg" alt="ドッジボールコート" draggable="false">
+            <svg id="draw-layer" class="draw-layer" viewBox="0 0 684 1024" preserveAspectRatio="none"></svg>
+            <div id="pieces-layer" class="pieces-layer"></div>
+            <div id="marquee-rect" class="marquee-rect" hidden></div>
+          </div>
+        </div>
+
+        <!-- コート左右（上下）の余白にオーバーレイ -->
+        <aside id="toolbar" class="toolbar side-overlay edit-chrome" aria-label="描画ツール">
+          <button type="button" class="panel-collapse-btn" id="btn-collapse-tools" title="ツールを折りたたむ" aria-label="ツールを折りたたむ">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2"/>
+              <path d="M9 4v16"/>
+              <path d="M15 9l-3 3 3 3"/>
+            </svg>
+          </button>
+          <div class="toolbar-scroll">
+            <button type="button" class="tool-btn active" data-tool="select" title="選択 / 移動">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path fill="currentColor" d="M5.2 2.4v17.2l4.6-4.5 2.9 6.9 2.35-.98-2.9-6.92H18.5z"/>
+              </svg>
+            </button>
+            <button type="button" class="tool-btn" data-tool="multiselect" title="一括選択">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+                <path d="M14 17.5h7M17.5 14v7"/>
+              </svg>
+            </button>
+            <div id="multi-select-actions" class="multi-select-actions" hidden>
+              <button type="button" id="btn-select-all" class="multi-act-btn" title="全選択">全選択</button>
+              <button type="button" id="btn-deselect-all" class="multi-act-btn subtle" title="選択解除">解除</button>
+            </div>
+            <div class="tool-divider"></div>
+            <button type="button" class="tool-btn" data-tool="pen" title="ペン">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+            </button>
+            <button type="button" class="tool-btn" data-tool="arrow" title="矢印">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+            <button type="button" class="tool-btn" data-tool="line" title="直線">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20L20 4"/></svg>
+            </button>
+            <button type="button" class="tool-btn" data-tool="ellipse" title="円 / 楕円">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
+            </button>
+            <button type="button" class="tool-btn" data-tool="eraser" title="消しゴム">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path fill="currentColor" d="M16.1 2.9a2.2 2.2 0 0 1 3.1 0l2.4 2.4a2.2 2.2 0 0 1 0 3.1l-9.7 9.7H5.6v-6.3L16.1 2.9z"/>
+                <path fill="currentColor" opacity="0.4" d="M14.4 4.6l5.5 5.5-2.7 2.7-5.5-5.5z"/>
+                <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 20.5h16"/>
+              </svg>
+            </button>
+            <div id="ink-chrome-panel" class="ink-chrome-panel">
+              <div class="ink-chrome-inner">
+                <div class="tool-divider"></div>
+                <div class="pen-color-row">
+                  <button type="button" class="color-swatch active" data-color="#ff3b30" style="background:#ff3b30" title="赤"></button>
+                  <button type="button" class="color-swatch" data-color="#007aff" style="background:#007aff" title="青"></button>
+                  <button type="button" class="color-swatch" data-color="#34c759" style="background:#34c759" title="緑"></button>
+                  <button type="button" class="color-swatch" data-color="#ffd60a" style="background:#ffd60a" title="黄"></button>
+                  <button type="button" class="color-swatch" data-color="#af52de" style="background:#af52de" title="紫"></button>
+                  <button type="button" class="color-swatch" data-color="#000000" style="background:#000" title="黒"></button>
+                  <button type="button" class="color-swatch" data-color="#ffffff" style="background:#fff;border:1px solid #ccc" title="白"></button>
+                  <input type="color" id="pen-color-picker" class="pen-color-picker" value="#ff3b30" title="カラーパレット">
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- ペン系：太さ・透明度ポップオーバー -->
+        <div id="ink-style-popover" class="ink-style-popover" hidden>
+          <div class="ink-style-title">スタイル</div>
+          <div id="ink-arrow-mode" class="ink-mode-row" hidden>
+            <button type="button" class="ink-mode-btn active" data-arrow-mode="straight" title="直線矢印">直線</button>
+            <button type="button" class="ink-mode-btn" data-arrow-mode="free" title="自由線矢印">自由線</button>
+          </div>
+          <div class="ink-style-label">太さ</div>
+          <div class="stroke-widths" title="線の太さ">
+            <button type="button" class="stroke-btn" data-width="2" title="細"><span style="width:14px;height:2px"></span></button>
+            <button type="button" class="stroke-btn active" data-width="3.5" title="中"><span style="width:16px;height:3.5px"></span></button>
+            <button type="button" class="stroke-btn" data-width="6.5" title="太"><span style="width:18px;height:6px"></span></button>
+          </div>
+          <div id="ink-opacity-block">
+            <div class="ink-style-label">透明度</div>
+            <div class="opacity-row">
+              <input type="range" id="ink-opacity" min="0.2" max="1" step="0.05" value="1" title="透明度">
+              <span id="ink-opacity-label">100%</span>
+            </div>
+          </div>
+        </div>
+
+        <aside id="bench-panel" class="bench-panel side-overlay edit-only edit-chrome" aria-label="選手ベンチ">
+          <div class="bench-header">
+            <span class="pool-label">ベンチ</span>
+            <button type="button" class="panel-collapse-btn bench-collapse" id="btn-collapse-bench" title="ベンチを折りたたむ" aria-label="ベンチを折りたたむ">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2"/>
+                <path d="M15 4v16"/>
+                <path d="M9 9l3 3-3 3"/>
+              </svg>
+            </button>
+          </div>
+          <div id="player-pool" class="pool-row"></div>
+          <div class="pool-compact">
+            <button type="button" id="btn-add-opponent" class="pool-add-btn" title="相手を追加">
+              <span class="opp-dot"></span> 相手
+            </button>
+            <button type="button" id="btn-add-ball" class="pool-add-btn" title="ボールを追加">
+              <span class="ball-dot"></span> ボール
+            </button>
+          </div>
+          <div class="bench-actions">
+            <button type="button" id="btn-lock" class="action-btn" title="コマ固定切替">
+              <svg class="icon-unlock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+              <svg class="icon-lock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span id="lock-label">配置編集</span>
+            </button>
+            <button type="button" id="btn-members" class="action-btn">メンバー</button>
+            <button type="button" id="btn-templates" class="action-btn">テンプレ</button>
+            <button type="button" id="btn-snapshots" class="action-btn">スナップ</button>
+            <button type="button" id="btn-clear-pieces" class="action-btn subtle">コマ全削除</button>
+          </div>
+        </aside>
+      </section>
+    </div>
+
+    <!-- 説明モード用ミニバー -->
+    <footer class="footer-present present-only">
+      <button type="button" id="btn-lock-present" class="action-btn">
+        <span id="lock-label-present">配置編集</span>
+      </button>
+      <span class="present-hint">説明モード — 描画とズームが使えます</span>
+    </footer>
+  </div>
+
+  <!-- メンバー設定モーダル -->
+  <div id="modal-members" class="modal" hidden>
+    <div class="modal-backdrop" data-close="members"></div>
+    <div class="modal-panel" role="dialog" aria-labelledby="members-title">
+      <header class="modal-header">
+        <h2 id="members-title">メンバー設定</h2>
+        <button type="button" class="modal-close" data-close="members" aria-label="閉じる">×</button>
+      </header>
+      <div class="modal-steps">
+        <button type="button" class="step-tab active" data-step="1">1. 内野</button>
+        <button type="button" class="step-tab" data-step="2">2. アタッカー</button>
+        <button type="button" class="step-tab" data-step="3">3. 外野</button>
+      </div>
+      <div class="modal-body">
+        <p id="members-hint" class="members-hint">内野メンバーを選択してください（目安：7人）</p>
+        <div id="members-list" class="members-list"></div>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" id="btn-members-prev" class="btn secondary" disabled>戻る</button>
+        <button type="button" id="btn-members-next" class="btn primary">次へ</button>
+        <button type="button" id="btn-members-done" class="btn primary" hidden>完了</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- テンプレートモーダル -->
+  <div id="modal-templates" class="modal" hidden>
+    <div class="modal-backdrop" data-close="templates"></div>
+    <div class="modal-panel" role="dialog" aria-labelledby="templates-title">
+      <header class="modal-header">
+        <h2 id="templates-title">テンプレート</h2>
+        <button type="button" class="modal-close" data-close="templates" aria-label="閉じる">×</button>
+      </header>
+      <div class="modal-body">
+        <p class="modal-desc">
+          テンプレートは「よく使う基本の選手配置」を保存するものです。読み込むと、現在モードの選手配置（と役割）が置き換わります。相手・ボール・描画はそのまま残ります。
+        </p>
+        <div class="save-row">
+          <input type="text" id="template-name" placeholder="例：基本攻撃" maxlength="40">
+          <button type="button" id="btn-save-template" class="btn primary">現在の配置を保存</button>
+        </div>
+        <ul id="template-list" class="item-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- スナップモーダル -->
+  <div id="modal-snapshots" class="modal" hidden>
+    <div class="modal-backdrop" data-close="snapshots"></div>
+    <div class="modal-panel wide" role="dialog" aria-labelledby="snapshots-title">
+      <header class="modal-header">
+        <h2 id="snapshots-title">スナップ</h2>
+        <button type="button" class="modal-close" data-close="snapshots" aria-label="閉じる">×</button>
+      </header>
+      <div class="modal-body">
+        <p class="modal-desc">
+          スナップは「その瞬間の盤面まるごと」を保存するものです。選手・相手・ボール・描画・ズームなどを含み、読み込むとそのモードの盤面全体が復元されます。練習の記録や説明の途中保存に使えます。
+        </p>
+        <div class="save-row">
+          <input type="text" id="snapshot-name" placeholder="例：サイド攻撃 / 8月24日練習" maxlength="40">
+          <button type="button" id="btn-save-snapshot" class="btn primary">盤面をスナップ保存</button>
+        </div>
+        <ul id="snapshot-list" class="item-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト -->
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- 相手・ボール用アクション -->
+  <div id="piece-actions" class="piece-actions" hidden>
+    <button type="button" data-act="dup">複製</button>
+    <button type="button" data-act="lock" hidden>固定</button>
+    <button type="button" data-act="del" class="danger">削除</button>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
