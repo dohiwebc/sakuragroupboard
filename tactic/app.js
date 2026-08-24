@@ -2,7 +2,7 @@
  * SAKURA Group 戦術ボード
  * 論理座標系: BOARD_W x BOARD_H（コート・描画・コマで共通）
  */
-import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
+import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js?v=20260825b";
 
 /* コート画像 684×1024 に合わせた論理座標 */
 const BOARD_W = 684;
@@ -76,6 +76,8 @@ function emptyBoard() {
     pieces: [],
     drawings: [],
     zoom: 1,
+    panX: 0,
+    panY: 0,
     roles: emptyRoles()
   };
 }
@@ -107,6 +109,8 @@ function seedEmptyModesFrom(sourceKey) {
       pieces: deepClone(src.pieces),
       drawings: [],
       zoom: src.zoom || 1,
+      panX: 0,
+      panY: 0,
       roles: deepClone(src.roles || emptyRoles())
     };
     // 自動シードは Undo 対象にせず、そのモードの履歴基準だけ更新
@@ -215,6 +219,7 @@ let toastTimer = null;
 let activePointers = new Map();
 let pinchStartDist = 0;
 let pinchStartZoom = 1;
+let pinchLastMid = null;
 let drawing = null; // { id, type, ... }
 let dragPiece = null; // { id, offsetX, offsetY } or group drag
 let benchDrag = null; // ベンチ→コートのドラッグ状態
@@ -286,10 +291,41 @@ function clientToBoard(clientX, clientY) {
 }
 
 function applyZoom() {
-  const z = board().zoom;
-  els.stage.style.transform = `scale(${z})`;
+  const b = board();
+  const z = b.zoom || 1;
+  const x = b.panX || 0;
+  const y = b.panY || 0;
+  els.stage.style.transform = `translate(${x}px, ${y}px) scale(${z})`;
   els.btnZoomReset.textContent = `${Math.round(z * 100)}%`;
-  layoutSidePanels();
+}
+
+/** パンの範囲を制限（コートが完全に画面外へ行かない） */
+function clampPan() {
+  const b = board();
+  if (!els.stage || !els.viewport) return;
+  const z = b.zoom || 1;
+  const w = els.stage.offsetWidth * z;
+  const h = els.stage.offsetHeight * z;
+  const vw = els.viewport.clientWidth;
+  const vh = els.viewport.clientHeight;
+  const maxX = Math.max(48, (w - vw) / 2 + vw * 0.35);
+  const maxY = Math.max(48, (h - vh) / 2 + vh * 0.35);
+  b.panX = clamp(b.panX || 0, -maxX, maxX);
+  b.panY = clamp(b.panY || 0, -maxY, maxY);
+}
+
+function setPan(x, y, save = false) {
+  board().panX = x;
+  board().panY = y;
+  clampPan();
+  applyZoom();
+  if (save) scheduleSave();
+}
+
+function resetView() {
+  board().panX = 0;
+  board().panY = 0;
+  setZoom(1);
 }
 
 function fitStage() {
@@ -309,19 +345,27 @@ function fitStage() {
   layoutSidePanels();
 }
 
-/** コート左右（または上下）の余白にツール／ベンチを配置 */
+/** コート左右（または上下）の余白にツール／ベンチを配置（ズーム無視） */
 function layoutSidePanels() {
   const area = document.querySelector(".board-area");
   const toolbar = document.getElementById("toolbar");
   const bench = document.getElementById("bench-panel");
-  if (!area || !els.stage) return;
+  if (!area || !els.stage || !els.viewport) return;
 
   const ar = area.getBoundingClientRect();
-  const sr = els.stage.getBoundingClientRect();
-  const leftGap = Math.max(0, sr.left - ar.left);
-  const rightGap = Math.max(0, ar.right - sr.right);
-  const topGap = Math.max(0, sr.top - ar.top);
-  const bottomGap = Math.max(0, ar.bottom - sr.bottom);
+  const vp = els.viewport.getBoundingClientRect();
+  // transform(scale) の影響を受けないレイアウトサイズで余白を測る
+  const stageW = els.stage.offsetWidth;
+  const stageH = els.stage.offsetHeight;
+  const stageLeft = vp.left + (vp.width - stageW) / 2;
+  const stageTop = vp.top + (vp.height - stageH) / 2;
+  const stageRight = stageLeft + stageW;
+  const stageBottom = stageTop + stageH;
+
+  const leftGap = Math.max(0, stageLeft - ar.left);
+  const rightGap = Math.max(0, ar.right - stageRight);
+  const topGap = Math.max(0, stageTop - ar.top);
+  const bottomGap = Math.max(0, ar.bottom - stageBottom);
   const useVertical = topGap + bottomGap > leftGap + rightGap + 40;
 
   area.classList.toggle("gutter-vertical", useVertical);
@@ -348,7 +392,7 @@ function layoutSidePanels() {
       bench.style.maxHeight = `${Math.max(100, bottomGap - pad)}px`;
     }
   } else {
-    // 左右余白モード：余白幅いっぱいにパネルを置く
+    // 左右余白モード：余白幅いっぱいにパネルを置く（ズーム前後で一定）
     const toolW = Math.max(44, Math.min(72, leftGap - pad * 2));
     const benchW = Math.max(120, Math.min(220, rightGap - pad * 2));
     if (toolbar) {
@@ -372,6 +416,7 @@ function layoutSidePanels() {
     }
   }
   syncExpandButtonPositions();
+  syncTabletQuickBar();
 }
 
 /** 展開ボタンを、折りたたみボタンと同じ位置に合わせる */
@@ -413,8 +458,28 @@ function syncExpandButtonPositions() {
   }
 }
 
+/** タブレット用クイックバー（左下） */
+function syncTabletQuickBar() {
+  const bar = document.getElementById("tablet-quick-bar");
+  if (!bar) return;
+
+  const isTablet = window.matchMedia("(max-width: 1180px)").matches;
+  const show = isTablet && !document.body.classList.contains("present-mode");
+
+  bar.hidden = !show;
+  if (!show) return;
+
+  // 左下固定（ツールバー位置に依存しない）
+  bar.style.left = "6px";
+  bar.style.right = "auto";
+  bar.style.top = "auto";
+  bar.style.bottom = "156px";
+  bar.style.width = "";
+}
+
 function setZoom(z, save = true) {
   board().zoom = clamp(z, 0.5, 3);
+  clampPan();
   applyZoom();
   if (save) scheduleSave();
 }
@@ -470,8 +535,14 @@ function redo() {
 }
 
 function updateHistoryButtons() {
-  if (els.btnUndo) els.btnUndo.disabled = !canUndo();
-  if (els.btnRedo) els.btnRedo.disabled = !canRedo();
+  const undoDisabled = !canUndo();
+  const redoDisabled = !canRedo();
+  if (els.btnUndo) els.btnUndo.disabled = undoDisabled;
+  if (els.btnRedo) els.btnRedo.disabled = redoDisabled;
+  const undoT = $("#btn-undo-tablet");
+  const redoT = $("#btn-redo-tablet");
+  if (undoT) undoT.disabled = undoDisabled;
+  if (redoT) redoT.disabled = redoDisabled;
 }
 
 /**
@@ -1199,22 +1270,31 @@ function onPiecePointerDown(e) {
   e.preventDefault();
   e.stopPropagation();
 
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size >= 2) {
+    beginPinchGesture();
+    return;
+  }
+
   const el = e.currentTarget;
   const id = el.dataset.id;
   const piece = board().pieces.find((p) => p.id === id);
-  if (!piece) return;
-
-  if (activePointers.size >= 1 && e.pointerType === "touch") return;
+  if (!piece) {
+    activePointers.delete(e.pointerId);
+    return;
+  }
 
   const canMove = isPieceMovable(piece);
 
   // 動かせないコマ：選択ツールならタップでメニュー（相手・ボール）
   if (!canMove) {
     if (isPieceGloballyFrozen(piece) && (piece.kind === "player" || piece.kind === "opponent")) {
+      activePointers.delete(e.pointerId);
       toast("コマが固定されています。「配置編集」に切り替えてください");
       return;
     }
     if (piece.kind === "ball" && isPieceIndividuallyLocked(piece) && state.tool === "multiselect") {
+      activePointers.delete(e.pointerId);
       toast("このボールは個別に固定されています");
       return;
     }
@@ -1240,6 +1320,8 @@ function onPiecePointerDown(e) {
       };
       el.setPointerCapture(e.pointerId);
       const onMove = (ev) => {
+        activePointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+        if (updatePinchGesture(ev)) return;
         if (!dragPiece || dragPiece.id !== id) return;
         const travel = Math.hypot(
           ev.clientX - dragPiece.pointerStartX,
@@ -1252,6 +1334,8 @@ function onPiecePointerDown(e) {
         el.removeEventListener("pointerup", onUp);
         el.removeEventListener("pointercancel", onUp);
         try { el.releasePointerCapture(ev.pointerId); } catch (_) {}
+        activePointers.delete(ev.pointerId);
+        endPinchIfNeeded();
         const moved = dragPiece?.moved;
         dragPiece = null;
         if (!moved) {
@@ -1262,7 +1346,9 @@ function onPiecePointerDown(e) {
       el.addEventListener("pointermove", onMove);
       el.addEventListener("pointerup", onUp);
       el.addEventListener("pointercancel", onUp);
+      return;
     }
+    activePointers.delete(e.pointerId);
     return;
   }
 
@@ -1337,6 +1423,8 @@ function onPiecePointerDown(e) {
   setBenchDropHighlight(false);
 
   const onMove = (ev) => {
+    activePointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (updatePinchGesture(ev)) return;
     if (!dragPiece || dragPiece.id !== id) return;
     ev.preventDefault();
     const travel = Math.hypot(
@@ -1397,6 +1485,8 @@ function onPiecePointerDown(e) {
     el.classList.remove("dragging");
     el.style.opacity = "";
     try { el.releasePointerCapture(ev.pointerId); } catch (_) {}
+    activePointers.delete(ev.pointerId);
+    endPinchIfNeeded();
     setBenchDropHighlight(false);
     clearLongPress();
 
@@ -1991,9 +2081,59 @@ function updatePanelToggles() {
     expandBench.setAttribute("aria-hidden", showBench ? "false" : "true");
   }
   syncExpandButtonPositions();
+  syncTabletQuickBar();
 }
 
-// ---------- ボードポインタ（描画・ピンチ） ----------
+// ---------- ボードポインタ（描画・ピンチ・パン） ----------
+function pinchMidpoint(pts) {
+  return {
+    x: (pts[0].x + pts[1].x) / 2,
+    y: (pts[0].y + pts[1].y) / 2
+  };
+}
+
+function beginPinchGesture() {
+  drawing = null;
+  liveInkEl = null;
+  eraserSession = null;
+  dragPiece = null;
+  hideMarquee();
+  clearLongPress();
+  const pts = [...activePointers.values()];
+  if (pts.length < 2) return;
+  pinchStartDist = dist(pts[0], pts[1]);
+  pinchStartZoom = board().zoom;
+  pinchLastMid = pinchMidpoint(pts);
+}
+
+function updatePinchGesture(e) {
+  if (activePointers.size !== 2) return false;
+  if (e?.cancelable) e.preventDefault();
+  const pts = [...activePointers.values()];
+  const mid = pinchMidpoint(pts);
+  const d = dist(pts[0], pts[1]);
+  const b = board();
+  if (pinchLastMid) {
+    b.panX = (b.panX || 0) + (mid.x - pinchLastMid.x);
+    b.panY = (b.panY || 0) + (mid.y - pinchLastMid.y);
+  }
+  if (pinchStartDist > 0) {
+    b.zoom = clamp(pinchStartZoom * (d / pinchStartDist), 0.5, 3);
+  }
+  clampPan();
+  applyZoom();
+  pinchLastMid = mid;
+  return true;
+}
+
+function endPinchIfNeeded() {
+  if (activePointers.size < 2) {
+    if (pinchStartDist > 0 || pinchLastMid) scheduleSave();
+    pinchStartDist = 0;
+    pinchLastMid = null;
+  }
+}
+
 function onViewportPointerDown(e) {
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -2019,17 +2159,9 @@ function onViewportPointerDown(e) {
     }
   }
 
-  // 2本指 → ピンチ開始
+  // 2本指 → ピンチズーム＋パン開始
   if (activePointers.size === 2) {
-    drawing = null;
-    liveInkEl = null;
-    eraserSession = null;
-    dragPiece = null;
-    hideMarquee();
-    clearLongPress();
-    const pts = [...activePointers.values()];
-    pinchStartDist = dist(pts[0], pts[1]);
-    pinchStartZoom = board().zoom;
+    beginPinchGesture();
     return;
   }
 
@@ -2127,15 +2259,8 @@ function onViewportPointerMove(e) {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   }
 
-  // ピンチズーム
-  if (activePointers.size === 2) {
-    const pts = [...activePointers.values()];
-    const d = dist(pts[0], pts[1]);
-    if (pinchStartDist > 0) {
-      setZoom(pinchStartZoom * (d / pinchStartDist), false);
-    }
-    return;
-  }
+  // 2本指：ピンチズーム＋パン（画面移動）
+  if (updatePinchGesture(e)) return;
 
   // 囲み選択ドラッグ
   if (marquee && e.pointerId === marquee.pointerId) {
@@ -2190,7 +2315,7 @@ function onViewportPointerUp(e) {
   activePointers.delete(e.pointerId);
 
   if (activePointers.size < 2) {
-    pinchStartDist = 0;
+    endPinchIfNeeded();
   }
 
   if (marquee && e.pointerId === marquee.pointerId) {
@@ -2240,12 +2365,38 @@ function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-// ホイールズーム
+// ホイール：通常はパン、Ctrl/Cmd+ホイールでズーム
 function onWheel(e) {
-  if (!(e.ctrlKey || e.metaKey)) return;
   e.preventDefault();
-  const delta = e.deltaY > 0 ? -0.08 : 0.08;
-  setZoom(board().zoom + delta);
+  const b = board();
+
+  if (e.ctrlKey || e.metaKey) {
+    const delta = e.deltaY > 0 ? -0.08 : 0.08;
+    setZoom((b.zoom || 1) + delta);
+    return;
+  }
+
+  // トラックパッドの横スクロール／Shift+縦スクロールも考慮
+  let dx = e.deltaX;
+  let dy = e.deltaY;
+  if (e.shiftKey && Math.abs(dx) < Math.abs(dy)) {
+    dx = dy;
+    dy = 0;
+  }
+  // deltaMode: 0=pixel, 1=line, 2=page
+  if (e.deltaMode === 1) {
+    dx *= 16;
+    dy *= 16;
+  } else if (e.deltaMode === 2) {
+    dx *= 80;
+    dy *= 80;
+  }
+
+  b.panX = (b.panX || 0) - dx;
+  b.panY = (b.panY || 0) - dy;
+  clampPan();
+  applyZoom();
+  scheduleSave();
 }
 
 // ---------- メンバー設定 ----------
@@ -2555,12 +2706,11 @@ function setDrawingsVisible(on, { silent = false } = {}) {
 function applyDrawingsVisibility() {
   const visible = state.drawingsVisible !== false;
   els.draw?.classList.toggle("drawings-hidden", !visible);
-  const btn = $("#btn-toggle-draw");
-  if (btn) {
+  $$(".toggle-draw-btn").forEach((btn) => {
     btn.classList.toggle("is-off", !visible);
     btn.setAttribute("aria-pressed", visible ? "true" : "false");
     btn.title = visible ? "描画を非表示" : "描画を表示";
-  }
+  });
 }
 
 // ---------- 永続化 ----------
@@ -2592,6 +2742,8 @@ function applyLoaded(data) {
             pieces: data.modes[m].pieces || [],
             drawings: data.modes[m].drawings || [],
             zoom: data.modes[m].zoom || 1,
+            panX: data.modes[m].panX || 0,
+            panY: data.modes[m].panY || 0,
             roles: data.modes[m].roles || emptyRoles()
           };
         }
@@ -2808,11 +2960,15 @@ function bindEvents() {
 
   els.btnUndo?.addEventListener("click", undo);
   els.btnRedo?.addEventListener("click", redo);
+  $("#btn-undo-tablet")?.addEventListener("click", undo);
+  $("#btn-redo-tablet")?.addEventListener("click", redo);
   $("#btn-clear-draw")?.addEventListener("click", clearDrawings);
-  $("#btn-toggle-draw")?.addEventListener("click", toggleDrawingsVisible);
+  $$(".toggle-draw-btn").forEach((btn) => {
+    btn.addEventListener("click", toggleDrawingsVisible);
+  });
   $("#btn-zoom-in")?.addEventListener("click", () => setZoom(board().zoom + 0.15));
   $("#btn-zoom-out")?.addEventListener("click", () => setZoom(board().zoom - 0.15));
-  $("#btn-zoom-reset")?.addEventListener("click", () => setZoom(1));
+  $("#btn-zoom-reset")?.addEventListener("click", () => resetView());
 
   els.btnLock?.addEventListener("click", toggleLock);
   els.btnLockPresent?.addEventListener("click", toggleLock);
@@ -2865,9 +3021,19 @@ function bindEvents() {
   els.viewport.addEventListener("pointercancel", onViewportPointerUp);
   els.viewport.addEventListener("wheel", onWheel, { passive: false });
 
-  // ジェスチャー拡大防止
-  document.addEventListener("gesturestart", (e) => e.preventDefault());
-  document.addEventListener("gesturechange", (e) => e.preventDefault());
+  // ダブルタップによるページズームのみ抑止（ピンチズームは許可）
+  let lastTouchEndAt = 0;
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      const now = Date.now();
+      if (now - lastTouchEndAt <= 320) {
+        e.preventDefault();
+      }
+      lastTouchEndAt = now;
+    },
+    { passive: false, capture: true }
+  );
 
   // キーボード
   window.addEventListener("keydown", (e) => {

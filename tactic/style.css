@@ -28,6 +28,11 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+html {
+  touch-action: manipulation;
+  -ms-touch-action: manipulation;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -40,6 +45,11 @@ html, body {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  touch-action: manipulation;
+  -ms-content-zooming: none;
+}
+
+.app, .main, .board-area, .header, button, .modal {
   touch-action: manipulation;
 }
 
@@ -212,21 +222,65 @@ button, input { font-family: inherit; }
   opacity: 0.9;
   color: var(--text-dim);
 }
-#btn-toggle-draw {
+.toggle-draw-btn {
   position: relative;
 }
-#btn-toggle-draw .icon-draw-show,
-#btn-toggle-draw .icon-draw-hide {
+.toggle-draw-btn .icon-draw-show,
+.toggle-draw-btn .icon-draw-hide {
   display: block;
 }
-#btn-toggle-draw .icon-draw-hide {
+.toggle-draw-btn .icon-draw-hide {
   display: none;
 }
-#btn-toggle-draw.is-off .icon-draw-show {
+.toggle-draw-btn.is-off .icon-draw-show {
   display: none;
 }
-#btn-toggle-draw.is-off .icon-draw-hide {
+.toggle-draw-btn.is-off .icon-draw-hide {
   display: block;
+}
+
+/* タブレット：左下のクイックバー */
+.tablet-quick-bar {
+  display: none;
+  position: absolute;
+  left: 6px;
+  bottom: 156px;
+  top: auto;
+  z-index: 21;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  width: 48px;
+  background: rgba(28, 28, 30, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+.tablet-quick-bar .icon-btn {
+  width: 36px;
+  height: 36px;
+  background: transparent;
+}
+.tablet-quick-bar .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+@media (max-width: 1180px) {
+  body:not(.present-mode) .tablet-quick-bar:not([hidden]) {
+    display: flex;
+  }
+}
+.board-area.gutter-vertical .tablet-quick-bar {
+  flex-direction: row;
+  width: auto;
+  padding: 4px 6px;
+}
+.board-area.gutter-vertical .tablet-quick-bar .icon-btn {
+  width: 34px;
+  height: 34px;
 }
 .pieces-layer {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -637,7 +691,7 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
 .ball-dot {
   width: 16px;
   height: 16px;
-  background: url("assets/ball.png") center / cover no-repeat;
+  background: url("assets/ball.png?v=20260825b") center / cover no-repeat;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 .bench-actions {
@@ -708,6 +762,7 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
 
 body.present-mode .edit-only { display: none !important; }
 body.present-mode .edit-chrome.edge-toggle { display: none !important; }
+body.present-mode .tablet-quick-bar { display: none !important; }
 body.present-mode .present-only { display: inline-flex !important; }
 body.present-mode .footer-present { display: flex !important; }
 body.present-mode .app { grid-template-rows: var(--header-h) 1fr 44px; }
@@ -815,7 +870,7 @@ body.present-mode .main { grid-template-columns: 1fr; }
   min-width: 36px;
   min-height: 36px;
   border-radius: 50%;
-  background: url("assets/ball.png") center / cover no-repeat;
+  background: url("assets/ball.png?v=20260825b") center / cover no-repeat;
   border: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
