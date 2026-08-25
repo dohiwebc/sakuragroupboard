@@ -13,13 +13,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260825b">
+  <link rel="stylesheet" href="style.css?v=20260825s">
 </head>
 <body>
   <div id="app" class="app">
     <!-- ヘッダー -->
     <header class="header">
-      <div class="header-left">
+      <div class="header-left edit-only">
         <h1 class="brand">SAKURA Group</h1>
         <span id="sync-badge" class="sync-badge" title="保存状態">ローカル</span>
       </div>
@@ -30,31 +30,27 @@
         <button type="button" class="mode-tab" data-mode="free" role="tab">自由</button>
       </div>
 
-      <div class="mode-copy-wrap edit-only">
-        <button type="button" class="mode-copy-btn" id="btn-copy-formation" aria-expanded="false" aria-haspopup="true" title="陣形を他モードへコピー">
-          陣形コピー
-        </button>
-        <div id="copy-formation-menu" class="copy-formation-menu" hidden role="menu">
-          <!-- 開いているモードから他モードへのみ（JSで生成） -->
-        </div>
+      <div class="player-count-wrap edit-only" title="コート上の選手数">
+        <span class="player-count-label">選手</span>
+        <span id="player-count" class="player-count-num">0</span>
       </div>
 
       <div class="header-center-tools" aria-label="編集操作">
-        <button type="button" class="icon-btn" id="btn-undo" title="元に戻す" disabled>
+        <button type="button" class="icon-btn edit-only" id="btn-undo" title="元に戻す" disabled>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
         </button>
-        <button type="button" class="icon-btn" id="btn-redo" title="やり直す" disabled>
+        <button type="button" class="icon-btn edit-only" id="btn-redo" title="やり直す" disabled>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg>
         </button>
-        <button type="button" class="icon-btn danger" id="btn-clear-draw" title="描画全消去">
+        <button type="button" class="icon-btn danger edit-only" id="btn-clear-draw" title="描画全消去">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
         </button>
-        <span class="header-tools-sep"></span>
+        <span class="header-tools-sep edit-only"></span>
         <button type="button" class="icon-btn" id="btn-zoom-out" title="縮小">−</button>
         <button type="button" class="icon-btn zoom-label" id="btn-zoom-reset" title="表示位置と倍率をリセット">100%</button>
         <button type="button" class="icon-btn" id="btn-zoom-in" title="拡大">+</button>
-        <span class="header-tools-sep"></span>
-        <button type="button" class="icon-btn toggle-draw-btn" id="btn-toggle-draw" title="描画を非表示" aria-pressed="true">
+        <span class="header-tools-sep edit-only"></span>
+        <button type="button" class="icon-btn toggle-draw-btn edit-only" id="btn-toggle-draw" title="描画を非表示" aria-pressed="true">
           <svg class="icon-draw-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
             <circle cx="12" cy="12" r="3"/>
@@ -69,7 +65,7 @@
       </div>
 
       <div class="header-right">
-        <button type="button" id="btn-present" class="icon-btn" title="説明モード" aria-label="説明モード">
+        <button type="button" id="btn-present" class="icon-btn edit-only" title="説明モード" aria-label="説明モード">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
         </button>
         <button type="button" id="btn-exit-present" class="btn-text present-only" title="説明モード終了">終了</button>
@@ -167,13 +163,17 @@
           </div>
         </aside>
 
-        <!-- タブレット用：左バー下のクイック操作（Undo / Redo / 描画表示） -->
+        <!-- タブレット／説明モード用：左下のクイック操作（Undo / Redo / 描画表示／配置ロック） -->
         <aside id="tablet-quick-bar" class="tablet-quick-bar edit-chrome" aria-label="履歴と描画表示" hidden>
           <button type="button" class="icon-btn" id="btn-undo-tablet" title="元に戻す" disabled>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
           </button>
           <button type="button" class="icon-btn" id="btn-redo-tablet" title="やり直す" disabled>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg>
+          </button>
+          <button type="button" class="icon-btn toggle-lock-btn present-only" id="btn-lock-present" title="配置編集中（タップでコマ固定）" aria-pressed="false">
+            <svg class="icon-unlock" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            <svg class="icon-lock" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </button>
           <button type="button" class="icon-btn toggle-draw-btn" id="btn-toggle-draw-tablet" title="描画を非表示" aria-pressed="true">
             <svg class="icon-draw-show" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -240,19 +240,19 @@
             <button type="button" id="btn-members" class="action-btn">メンバー</button>
             <button type="button" id="btn-templates" class="action-btn">テンプレ</button>
             <button type="button" id="btn-snapshots" class="action-btn">スナップ</button>
+            <div class="mode-copy-wrap bench-copy-wrap">
+              <button type="button" class="action-btn mode-copy-btn" id="btn-copy-formation" aria-expanded="false" aria-haspopup="true" title="陣形を他モードへコピー">
+                陣形コピー
+              </button>
+              <div id="copy-formation-menu" class="copy-formation-menu" hidden role="menu">
+                <!-- 開いているモードから他モードへのみ（JSで生成） -->
+              </div>
+            </div>
             <button type="button" id="btn-clear-pieces" class="action-btn subtle">コマ全削除</button>
           </div>
         </aside>
       </section>
     </div>
-
-    <!-- 説明モード用ミニバー -->
-    <footer class="footer-present present-only">
-      <button type="button" id="btn-lock-present" class="action-btn">
-        <span id="lock-label-present">配置編集</span>
-      </button>
-      <span class="present-hint">説明モード — 描画とズームが使えます</span>
-    </footer>
   </div>
 
   <!-- メンバー設定モーダル -->
@@ -263,19 +263,16 @@
         <h2 id="members-title">メンバー設定</h2>
         <button type="button" class="modal-close" data-close="members" aria-label="閉じる">×</button>
       </header>
-      <div class="modal-steps">
-        <button type="button" class="step-tab active" data-step="1">1. 内野</button>
-        <button type="button" class="step-tab" data-step="2">2. アタッカー</button>
-        <button type="button" class="step-tab" data-step="3">3. 外野</button>
-      </div>
       <div class="modal-body">
-        <p id="members-hint" class="members-hint">内野メンバーを選択してください（目安：7人）</p>
+        <p id="members-hint" class="members-hint">
+          タップで役割を切り替え：未設定 → 内野 → アタッカー → 外野
+        </p>
+        <div id="members-summary" class="members-summary" aria-live="polite"></div>
         <div id="members-list" class="members-list"></div>
       </div>
-      <footer class="modal-footer">
-        <button type="button" id="btn-members-prev" class="btn secondary" disabled>戻る</button>
-        <button type="button" id="btn-members-next" class="btn primary">次へ</button>
-        <button type="button" id="btn-members-done" class="btn primary" hidden>完了</button>
+      <footer class="modal-footer members-footer">
+        <button type="button" id="btn-members-clear" class="btn secondary">全員クリア</button>
+        <button type="button" id="btn-members-done" class="btn primary">完了</button>
       </footer>
     </div>
   </div>
@@ -283,20 +280,92 @@
   <!-- テンプレートモーダル -->
   <div id="modal-templates" class="modal" hidden>
     <div class="modal-backdrop" data-close="templates"></div>
-    <div class="modal-panel" role="dialog" aria-labelledby="templates-title">
+    <div class="modal-panel wide" role="dialog" aria-labelledby="templates-title">
       <header class="modal-header">
         <h2 id="templates-title">テンプレート</h2>
         <button type="button" class="modal-close" data-close="templates" aria-label="閉じる">×</button>
       </header>
       <div class="modal-body">
         <p class="modal-desc">
-          テンプレートは「よく使う基本の選手配置」を保存するものです。読み込むと、現在モードの選手配置（と役割）が置き換わります。相手・ボール・描画はそのまま残ります。
+          テンプレートは「攻撃・守備・自由の基本布陣セット」です。保存すると3モードまとめて残ります。読み込む前にプレビューで配置を確認できます。相手・ボール・描画はそのまま残ります。
         </p>
         <div class="save-row">
-          <input type="text" id="template-name" placeholder="例：基本攻撃" maxlength="40">
-          <button type="button" id="btn-save-template" class="btn primary">現在の配置を保存</button>
+          <input type="text" id="template-name" placeholder="例：基本布陣" maxlength="40">
+          <button type="button" id="btn-save-template" class="btn primary">3モードをセット保存</button>
         </div>
         <ul id="template-list" class="item-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- テンプレプレビュー（テンプレモーダルの上に重ねる） -->
+  <div id="modal-template-preview" class="modal modal-stack" hidden>
+    <div class="modal-backdrop" data-close="template-preview"></div>
+    <div class="modal-panel tpl-preview-panel" role="dialog" aria-labelledby="tpl-preview-title">
+      <header class="modal-header">
+        <h2 id="tpl-preview-title">プレビュー</h2>
+        <button type="button" class="modal-close" data-close="template-preview" aria-label="閉じる">×</button>
+      </header>
+      <div class="modal-body tpl-preview-body">
+        <div class="tpl-preview-toolbar">
+          <button type="button" id="btn-tpl-back" class="btn secondary">テンプレ一覧へ戻る</button>
+        </div>
+        <div class="tpl-preview-modes" role="tablist" aria-label="プレビューモード">
+          <button type="button" class="tpl-mode-tab active" data-tpl-mode="attack">攻撃</button>
+          <button type="button" class="tpl-mode-tab" data-tpl-mode="defense">守備</button>
+          <button type="button" class="tpl-mode-tab" data-tpl-mode="free">自由</button>
+        </div>
+        <p id="tpl-preview-meta" class="members-hint"></p>
+        <div class="tpl-compare" aria-label="配置の比較プレビュー">
+          <div class="tpl-compare-col">
+            <div class="tpl-compare-label">今の配置 <span class="tpl-zoom-hint">タップで拡大</span></div>
+            <button type="button" class="tpl-mini-court tpl-court-hit" id="tpl-court-before" data-tpl-zoom="before" title="今の配置を拡大">
+              <img class="tpl-mini-court-img" src="assets/court.jpg?v=20260825b" alt="" draggable="false">
+              <div id="tpl-mini-pieces-before" class="tpl-mini-pieces"></div>
+            </button>
+          </div>
+          <div class="tpl-compare-col">
+            <div class="tpl-compare-label tpl-compare-label-after">読み込み後 <span class="tpl-zoom-hint">タップで拡大</span></div>
+            <button type="button" class="tpl-mini-court tpl-mini-court-after tpl-court-hit" id="tpl-court-after" data-tpl-zoom="after" title="読み込み後を拡大">
+              <img class="tpl-mini-court-img" src="assets/court.jpg?v=20260825b" alt="" draggable="false">
+              <div id="tpl-mini-pieces" class="tpl-mini-pieces"></div>
+            </button>
+          </div>
+          <div class="tpl-compare-arrow" aria-hidden="true">
+            <span>→</span>
+            <small>これに変わる</small>
+          </div>
+        </div>
+        <p class="load-confirm-note">
+          読み込み後も相手・ボール・描画はそのまま残ります。自チームの選手配置だけが入れ替わります。
+        </p>
+        <div class="tpl-preview-actions">
+          <button type="button" id="btn-tpl-load-set" class="btn primary">セットを読み込む</button>
+          <button type="button" id="btn-tpl-load-current" class="btn secondary">今のモードのみ</button>
+          <button type="button" id="btn-tpl-overwrite-set" class="btn secondary">セット上書き</button>
+          <button type="button" id="btn-tpl-overwrite-current" class="btn secondary">今のモードのみ上書き</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テンプレ1枚拡大プレビュー -->
+  <div id="modal-tpl-zoom" class="modal modal-stack-top" hidden>
+    <div class="modal-backdrop" data-close="tpl-zoom"></div>
+    <div class="modal-panel tpl-zoom-panel" role="dialog" aria-labelledby="tpl-zoom-title">
+      <header class="modal-header">
+        <h2 id="tpl-zoom-title">拡大プレビュー</h2>
+        <button type="button" class="modal-close" data-close="tpl-zoom" aria-label="閉じる">×</button>
+      </header>
+      <div class="modal-body tpl-zoom-body">
+        <div class="tpl-preview-toolbar">
+          <button type="button" id="btn-tpl-zoom-back" class="btn secondary">比較プレビューへ戻る</button>
+        </div>
+        <p id="tpl-zoom-meta" class="members-hint"></p>
+        <div class="tpl-zoom-court" aria-label="拡大コート">
+          <img class="tpl-mini-court-img" src="assets/court.jpg?v=20260825b" alt="" draggable="false">
+          <div id="tpl-zoom-pieces" class="tpl-mini-pieces tpl-zoom-pieces"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -322,6 +391,34 @@
     </div>
   </div>
 
+  <!-- スナップ簡易プレビュー -->
+  <div id="modal-snapshot-preview" class="modal modal-stack" hidden>
+    <div class="modal-backdrop" data-close="snapshot-preview"></div>
+    <div class="modal-panel tpl-preview-panel" role="dialog" aria-labelledby="snap-preview-title">
+      <header class="modal-header">
+        <h2 id="snap-preview-title">スナッププレビュー</h2>
+        <button type="button" class="modal-close" data-close="snapshot-preview" aria-label="閉じる">×</button>
+      </header>
+      <div class="modal-body tpl-preview-body">
+        <div class="tpl-preview-toolbar">
+          <button type="button" id="btn-snap-back" class="btn secondary">スナップ一覧へ戻る</button>
+        </div>
+        <p id="snap-preview-meta" class="members-hint"></p>
+        <p class="load-confirm-note">
+          読み込むと、このモードの盤面全体（選手・相手・ボール・描画）が置き換わります。他のモードには影響しません。
+        </p>
+        <div class="snap-preview-court" aria-label="スナップ簡易プレビュー">
+          <img class="tpl-mini-court-img" src="assets/court.jpg?v=20260825b" alt="" draggable="false">
+          <div id="snap-mini-pieces" class="snap-mini-pieces"></div>
+        </div>
+        <div class="tpl-preview-actions">
+          <button type="button" id="btn-snap-load" class="btn primary">このスナップを読み込む</button>
+          <button type="button" id="btn-snap-overwrite" class="btn secondary">今の盤面で上書き</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- トースト -->
   <div id="toast" class="toast" hidden></div>
 
@@ -332,6 +429,6 @@
     <button type="button" data-act="del" class="danger">削除</button>
   </div>
 
-  <script type="module" src="app.js?v=20260825b"></script>
+  <script type="module" src="app.js?v=20260825s"></script>
 </body>
 </html>

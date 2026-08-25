@@ -2,7 +2,7 @@
  * SAKURA Group 戦術ボード
  * 論理座標系: BOARD_W x BOARD_H（コート・描画・コマで共通）
  */
-import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js?v=20260825b";
+import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js?v=20260825j";
 
 /* コート画像 684×1024 に合わせた論理座標 */
 const BOARD_W = 684;
@@ -243,7 +243,6 @@ const els = {
   playerPool: $("#player-pool"),
   syncBadge: $("#sync-badge"),
   lockLabel: $("#lock-label"),
-  lockLabelPresent: $("#lock-label-present"),
   btnLock: $("#btn-lock"),
   btnLockPresent: $("#btn-lock-present"),
   btnZoomReset: $("#btn-zoom-reset"),
@@ -269,16 +268,41 @@ function toast(msg) {
   toastTimer = setTimeout(() => { els.toast.hidden = true; }, 2200);
 }
 
-function getRole(name) {
-  const r = board().roles;
-  if (r.attackers.includes(name)) return "attacker";
-  if (r.outfield.includes(name)) return "outfield";
-  if (r.infield.includes(name)) return "infield";
+function getRole(name, roles = board().roles) {
+  const r = roles || emptyRoles();
+  // 旧データで重複がある場合は外野を優先
+  if (r.outfield?.includes(name)) return "outfield";
+  if (r.attackers?.includes(name)) return "attacker";
+  if (r.infield?.includes(name)) return "infield";
   return "none";
 }
 
 function roleClass(name) {
   return `role-${getRole(name)}`;
+}
+
+/** 1人1役割に正規化（外野 > アタッカー > 内野） */
+function normalizeRoles(roles) {
+  const out = [];
+  const atk = [];
+  const inf = [];
+  const seen = new Set();
+  for (const name of roles?.outfield || []) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  for (const name of roles?.attackers || []) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    atk.push(name);
+  }
+  for (const name of roles?.infield || []) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    inf.push(name);
+  }
+  return { infield: inf, attackers: atk, outfield: out };
 }
 
 // ---------- 座標変換 ----------
@@ -371,6 +395,8 @@ function layoutSidePanels() {
   area.classList.toggle("gutter-vertical", useVertical);
 
   const pad = 6;
+  const isPhone = window.matchMedia("(max-width: 640px)").matches;
+  const isPhoneLandscape = window.matchMedia("(orientation: landscape) and (max-height: 500px)").matches;
   if (useVertical) {
     // 上下余白モード：CSSクラスに任せる（幅は自動）
     if (toolbar) {
@@ -380,7 +406,10 @@ function layoutSidePanels() {
       toolbar.style.bottom = "auto";
       toolbar.style.width = "";
       toolbar.style.height = "";
-      toolbar.style.maxHeight = `${Math.max(48, topGap - pad)}px`;
+      const toolMax = isPhone
+        ? Math.max(44, Math.min(topGap - pad, 52))
+        : Math.max(48, topGap - pad);
+      toolbar.style.maxHeight = `${toolMax}px`;
     }
     if (bench) {
       bench.style.left = `${pad}px`;
@@ -389,7 +418,14 @@ function layoutSidePanels() {
       bench.style.bottom = `${pad}px`;
       bench.style.width = "";
       bench.style.height = "";
-      bench.style.maxHeight = `${Math.max(100, bottomGap - pad)}px`;
+      // 縦タブレットの算出は従来どおり。phone のみコートに少し被っても操作面を確保
+      let benchMax = Math.max(100, bottomGap - pad);
+      if (isPhone && !isPhoneLandscape) {
+        benchMax = Math.min(230, Math.max(190, Math.floor(window.innerHeight * 0.34)));
+      } else if (isPhoneLandscape) {
+        benchMax = Math.min(100, Math.max(72, Math.floor(window.innerHeight * 0.36)));
+      }
+      bench.style.maxHeight = `${benchMax}px`;
     }
   } else {
     // 左右余白モード：余白幅いっぱいにパネルを置く（ズーム前後で一定）
@@ -458,22 +494,40 @@ function syncExpandButtonPositions() {
   }
 }
 
-/** タブレット用クイックバー（左下） */
+/** タブレット／説明モード用クイックバー（左下） */
 function syncTabletQuickBar() {
   const bar = document.getElementById("tablet-quick-bar");
   if (!bar) return;
 
   const isTablet = window.matchMedia("(max-width: 1180px)").matches;
-  const show = isTablet && !document.body.classList.contains("present-mode");
+  const isPhone = window.matchMedia("(max-width: 640px)").matches;
+  const isPhoneLandscape = window.matchMedia("(orientation: landscape) and (max-height: 500px)").matches;
+  const isPresent = document.body.classList.contains("present-mode");
+  // 説明モードでは常に左下へ。通常時はタブレット幅のみ
+  const show = isPresent || isTablet;
 
   bar.hidden = !show;
   if (!show) return;
 
   // 左下固定（ツールバー位置に依存しない）
-  bar.style.left = "6px";
+  // ※ 縦タブレット（幅>640）の bottom=156px は従来どおり維持
+  bar.style.left = isPhone ? "4px" : "6px";
   bar.style.right = "auto";
   bar.style.top = "auto";
-  bar.style.bottom = "156px";
+  if (isPhoneLandscape) {
+    bar.style.bottom = "68px";
+  } else if (isPhone) {
+    const bench = document.getElementById("bench-panel");
+    const area = document.querySelector(".board-area");
+    const vertical = area?.classList.contains("gutter-vertical");
+    const benchH =
+      vertical && bench && !bench.classList.contains("collapsed")
+        ? Math.round(bench.getBoundingClientRect().height)
+        : 0;
+    bar.style.bottom = `${Math.max(152, benchH + 10)}px`;
+  } else {
+    bar.style.bottom = "156px";
+  }
   bar.style.width = "";
 }
 
@@ -971,6 +1025,15 @@ function renderPieces() {
   for (const p of board().pieces) {
     layer.appendChild(createPieceEl(p));
   }
+  updatePlayerCount();
+}
+
+/** コート上の選手数（player のみ）をヘッダーに表示 */
+function updatePlayerCount() {
+  const el = $("#player-count");
+  if (!el) return;
+  const n = board().pieces.filter((p) => p.kind === "player").length;
+  el.textContent = String(n);
 }
 
 /** モード切替時など、前位置から新位置へスムーズに移動 */
@@ -1996,13 +2059,19 @@ function toggleLock() {
 
 function updateLockUI() {
   const locked = state.piecesLocked;
-  els.btnLock.classList.toggle("locked", locked);
-  els.lockLabel.textContent = locked ? "コマ固定" : "配置編集";
-  if (els.lockLabelPresent) {
-    els.lockLabelPresent.textContent = locked ? "コマ固定" : "配置編集";
+  els.btnLock?.classList.toggle("locked", locked);
+  if (els.lockLabel) els.lockLabel.textContent = locked ? "コマ固定" : "配置編集";
+
+  const presentBtn = els.btnLockPresent;
+  if (presentBtn) {
+    presentBtn.classList.toggle("is-locked", locked);
+    presentBtn.classList.toggle("locked", locked);
+    presentBtn.setAttribute("aria-pressed", locked ? "true" : "false");
+    presentBtn.title = locked ? "コマ固定中（タップで配置編集）" : "配置編集中（タップでコマ固定）";
   }
-  const unlock = els.btnLock.querySelector(".icon-unlock");
-  const lock = els.btnLock.querySelector(".icon-lock");
+
+  const unlock = els.btnLock?.querySelector(".icon-unlock");
+  const lock = els.btnLock?.querySelector(".icon-lock");
   if (unlock && lock) {
     unlock.hidden = locked;
     lock.hidden = !locked;
@@ -2019,6 +2088,7 @@ function setPresentMode(on) {
     applyPanelPrefs();
   }
   updatePanelToggles();
+  syncTabletQuickBar();
   requestAnimationFrame(() => fitStage());
   scheduleSave();
 }
@@ -2399,98 +2469,153 @@ function onWheel(e) {
   scheduleSave();
 }
 
-// ---------- メンバー設定 ----------
-let memberStep = 1;
+// ---------- メンバー設定（1画面・タップで役割切替） ----------
+const MEMBER_ROLE_CYCLE = ["none", "infield", "attacker", "outfield"];
+const MEMBER_ROLE_LABEL = {
+  none: "未設定",
+  infield: "内野",
+  attacker: "アタッカー",
+  outfield: "外野"
+};
+
 let draftRoles = emptyRoles();
 
 function openMembers() {
-  memberStep = 1;
-  draftRoles = deepClone(board().roles);
+  draftRoles = normalizeRoles(board().roles);
   $("#modal-members").hidden = false;
-  renderMembersStep();
+  renderMembersEditor();
 }
 
 function closeModal(name) {
+  if (name === "tpl-zoom") {
+    closeTplZoom();
+    return;
+  }
+  if (name === "template-preview") {
+    closeTplZoom();
+    closeTemplatePreview();
+    return;
+  }
+  if (name === "snapshot-preview") {
+    closeSnapshotPreview();
+    return;
+  }
   $(`#modal-${name}`).hidden = true;
-}
-
-function renderMembersStep() {
-  $$(".step-tab").forEach((t) => {
-    t.classList.toggle("active", Number(t.dataset.step) === memberStep);
-  });
-  const prev = $("#btn-members-prev");
-  const next = $("#btn-members-next");
-  const done = $("#btn-members-done");
-  prev.disabled = memberStep === 1;
-  next.hidden = memberStep === 3;
-  done.hidden = memberStep !== 3;
-
-  const list = els.membersList;
-  list.innerHTML = "";
-
-  if (memberStep === 1) {
-    els.membersHint.textContent = `内野メンバーを選択（現在 ${draftRoles.infield.length} 人 / 目安7人）`;
-    for (const name of ROSTER) {
-      const btn = makeMemberBtn(name, draftRoles.infield.includes(name), "infield");
-      btn.addEventListener("click", () => {
-        toggleInArray(draftRoles.infield, name);
-        // 内野から外したらアタッカーからも外す
-        if (!draftRoles.infield.includes(name)) {
-          draftRoles.attackers = draftRoles.attackers.filter((n) => n !== name);
-        }
-        renderMembersStep();
-      });
-      list.appendChild(btn);
-    }
-  } else if (memberStep === 2) {
-    els.membersHint.textContent = `アタッカーを選択（現在 ${draftRoles.attackers.length} 人）※ 内野から選択`;
-    const source = draftRoles.infield.length ? draftRoles.infield : ROSTER;
-    if (!draftRoles.infield.length) {
-      els.membersHint.textContent = "内野が未選択です。全員からアタッカーを選べます。";
-    }
-    for (const name of source) {
-      const btn = makeMemberBtn(name, draftRoles.attackers.includes(name), "attacker");
-      btn.addEventListener("click", () => {
-        toggleInArray(draftRoles.attackers, name);
-        if (draftRoles.attackers.includes(name) && !draftRoles.infield.includes(name)) {
-          draftRoles.infield.push(name);
-        }
-        renderMembersStep();
-      });
-      list.appendChild(btn);
-    }
-    if (!source.length) {
-      list.innerHTML = `<p class="empty-note">先に内野を選択してください</p>`;
-    }
-  } else {
-    els.membersHint.textContent = `外野を選択（現在 ${draftRoles.outfield.length} 人 / 目安1人）`;
-    for (const name of ROSTER) {
-      const btn = makeMemberBtn(name, draftRoles.outfield.includes(name), "outfield");
-      btn.addEventListener("click", () => {
-        toggleInArray(draftRoles.outfield, name);
-        renderMembersStep();
-      });
-      list.appendChild(btn);
-    }
+  if (name === "templates") {
+    closeTplZoom();
+    closeTemplatePreview();
+  }
+  if (name === "snapshots") {
+    closeSnapshotPreview();
   }
 }
 
-function makeMemberBtn(name, selected, kind) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "member-item" + (selected ? ` selected ${kind}` : "");
-  btn.textContent = splitName(name).join(" ");
-  return btn;
+function closeTplZoom() {
+  const modal = $("#modal-tpl-zoom");
+  if (modal) modal.hidden = true;
+  const layer = $("#tpl-zoom-pieces");
+  if (layer) layer.innerHTML = "";
 }
 
-function toggleInArray(arr, item) {
-  const i = arr.indexOf(item);
-  if (i >= 0) arr.splice(i, 1);
-  else arr.push(item);
+function openTplZoom(side) {
+  if (!tplPreviewId || (side !== "before" && side !== "after")) return;
+  const t = state.templates.find((x) => x.id === tplPreviewId);
+  if (!t) return;
+
+  let players = [];
+  let roles = emptyRoles();
+  let label = "";
+
+  if (side === "before") {
+    const currentBoard = state.modes[tplPreviewMode];
+    players = (currentBoard?.pieces || []).filter((p) => p.kind === "player");
+    roles = currentBoard?.roles || emptyRoles();
+    label = `今の配置（${MODE_LABEL[tplPreviewMode]}）`;
+  } else {
+    const tplData = getTemplateModeData(t, tplPreviewMode);
+    if (!tplData) {
+      toast("読み込み後のデータがありません");
+      return;
+    }
+    players = (tplData.pieces || []).filter((p) => p.kind === "player");
+    roles = tplData.roles || emptyRoles();
+    label = `読み込み後（${MODE_LABEL[tplPreviewMode]}）`;
+  }
+
+  const title = $("#tpl-zoom-title");
+  const meta = $("#tpl-zoom-meta");
+  if (title) title.textContent = t.name;
+  if (meta) meta.textContent = `${label} · 選手 ${players.length}人`;
+
+  fillTplPreviewLayer($("#tpl-zoom-pieces"), players, roles, { animate: false });
+  $("#modal-tpl-zoom").hidden = false;
+}
+
+function draftRoleOf(name) {
+  return getRole(name, draftRoles);
+}
+
+function setDraftRole(name, role) {
+  draftRoles.infield = draftRoles.infield.filter((n) => n !== name);
+  draftRoles.attackers = draftRoles.attackers.filter((n) => n !== name);
+  draftRoles.outfield = draftRoles.outfield.filter((n) => n !== name);
+  if (role === "infield") draftRoles.infield.push(name);
+  else if (role === "attacker") draftRoles.attackers.push(name);
+  else if (role === "outfield") draftRoles.outfield.push(name);
+}
+
+function cycleDraftRole(name) {
+  const cur = draftRoleOf(name);
+  const i = MEMBER_ROLE_CYCLE.indexOf(cur);
+  const next = MEMBER_ROLE_CYCLE[(i < 0 ? 0 : i + 1) % MEMBER_ROLE_CYCLE.length];
+  setDraftRole(name, next);
+}
+
+function renderMembersEditor() {
+  const list = els.membersList;
+  if (!list) return;
+  list.innerHTML = "";
+
+  const inf = draftRoles.infield.length;
+  const atk = draftRoles.attackers.length;
+  const out = draftRoles.outfield.length;
+  const summary = $("#members-summary");
+  if (summary) {
+    summary.innerHTML = `
+      <span class="members-sum-item infield">内野 <strong>${inf}</strong></span>
+      <span class="members-sum-item attacker">アタッカー <strong>${atk}</strong></span>
+      <span class="members-sum-item outfield">外野 <strong>${out}</strong></span>
+    `;
+  }
+  if (els.membersHint) {
+    els.membersHint.textContent = "タップで役割を切り替え：未設定 → 内野 → アタッカー → 外野";
+  }
+
+  for (const name of ROSTER) {
+    const role = draftRoleOf(name);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `member-item role-${role}` + (role !== "none" ? " is-set" : "");
+    btn.innerHTML = `
+      <span class="member-name">${escapeHtml(splitName(name).join(" "))}</span>
+      <span class="member-role">${MEMBER_ROLE_LABEL[role]}</span>
+    `;
+    btn.title = `${name}（${MEMBER_ROLE_LABEL[role]}）— タップで切替`;
+    btn.addEventListener("click", () => {
+      cycleDraftRole(name);
+      renderMembersEditor();
+    });
+    list.appendChild(btn);
+  }
+}
+
+function clearDraftMembers() {
+  draftRoles = emptyRoles();
+  renderMembersEditor();
 }
 
 function applyMembers() {
-  board().roles = deepClone(draftRoles);
+  board().roles = normalizeRoles(draftRoles);
   closeModal("members");
   renderPieces();
   renderPlayerPool();
@@ -2500,14 +2625,234 @@ function applyMembers() {
   toast("メンバー設定を反映しました");
 }
 
-// ---------- テンプレート ----------
+// ---------- テンプレート（3モードセット） ----------
+let tplPreviewId = null;
+let tplPreviewMode = "attack";
+let snapPreviewId = null;
+
+/** DOMの並びを配列に反映 */
+function syncArrayOrderFromList(listEl, arr) {
+  if (!listEl || !arr) return false;
+  const ids = [...listEl.querySelectorAll("li[data-id]")].map((li) => li.dataset.id);
+  if (!ids.length) return false;
+  const map = new Map(arr.map((x) => [x.id, x]));
+  const next = ids.map((id) => map.get(id)).filter(Boolean);
+  if (next.length !== arr.length) return false;
+  let changed = false;
+  for (let i = 0; i < next.length; i++) {
+    if (arr[i] !== next[i]) {
+      changed = true;
+      break;
+    }
+  }
+  if (!changed) return false;
+  arr.splice(0, arr.length, ...next);
+  return true;
+}
+
+/** ハンドルでドラッグ＆ドロップ並び替え（タッチ対応・フローティング） */
+function bindListDragReorder(listEl, onReorder) {
+  if (!listEl) return;
+  listEl.querySelectorAll("[data-drag-handle]").forEach((handle) => {
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button != null && e.button !== 0) return;
+      const li = handle.closest("li[data-id]");
+      if (!li || !listEl.contains(li)) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const startRect = li.getBoundingClientRect();
+      const offsetY = e.clientY - startRect.top;
+      const offsetX = e.clientX - startRect.left;
+      let lastClientX = e.clientX;
+      let lastClientY = e.clientY;
+      let rafId = 0;
+      let moved = false;
+
+      const placeholder = document.createElement("li");
+      placeholder.className = "item-placeholder";
+      placeholder.setAttribute("aria-hidden", "true");
+      placeholder.style.height = `${startRect.height}px`;
+      listEl.insertBefore(placeholder, li);
+
+      li.classList.add("is-dragging");
+      li.style.width = `${startRect.width}px`;
+      li.style.left = `${startRect.left}px`;
+      li.style.top = `${startRect.top}px`;
+
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch (_) {}
+
+      const placePlaceholder = (clientY) => {
+        const others = [...listEl.querySelectorAll("li[data-id]")].filter((el) => el !== li);
+        let target = null;
+        for (const other of others) {
+          const rect = other.getBoundingClientRect();
+          if (clientY < rect.top + rect.height / 2) {
+            target = other;
+            break;
+          }
+        }
+        if (target) {
+          if (placeholder.nextElementSibling !== target) listEl.insertBefore(placeholder, target);
+        } else {
+          listEl.appendChild(placeholder);
+        }
+      };
+
+      const onMove = (ev) => {
+        lastClientX = ev.clientX;
+        lastClientY = ev.clientY;
+        moved = true;
+        if (rafId) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = 0;
+          li.style.left = `${lastClientX - offsetX}px`;
+          li.style.top = `${lastClientY - offsetY}px`;
+          placePlaceholder(lastClientY);
+        });
+      };
+
+      const finish = (ev) => {
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", finish);
+        handle.removeEventListener("pointercancel", finish);
+        try {
+          handle.releasePointerCapture(ev.pointerId);
+        } catch (_) {}
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
+
+        li.classList.remove("is-dragging");
+        li.style.width = "";
+        li.style.left = "";
+        li.style.top = "";
+        if (placeholder.parentElement) {
+          listEl.insertBefore(li, placeholder);
+          placeholder.remove();
+        } else {
+          listEl.appendChild(li);
+        }
+        handle.classList.remove("is-active");
+        if (moved) onReorder?.();
+      };
+
+      handle.classList.add("is-active");
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
+    });
+  });
+}
+
+function emptyFormation() {
+  return { pieces: [], roles: emptyRoles() };
+}
+
+/** 旧形式テンプレをセット形式へ変換（不足モードは空） */
+function ensureTemplateIsSet(t) {
+  if (!t || isSetTemplate(t)) return;
+  const modes = {
+    attack: emptyFormation(),
+    defense: emptyFormation(),
+    free: emptyFormation()
+  };
+  if (MODES.includes(t.mode)) {
+    modes[t.mode] = {
+      pieces: deepClone((t.pieces || []).filter((p) => p.kind === "player")),
+      roles: deepClone(t.roles || emptyRoles())
+    };
+  }
+  t.modes = modes;
+  delete t.pieces;
+  delete t.roles;
+  delete t.mode;
+}
+
+function isSetTemplate(t) {
+  return Boolean(t?.modes && typeof t.modes === "object");
+}
+
+/** モード用の選手＋役割を取得（セット／旧形式両対応） */
+function getTemplateModeData(t, mode) {
+  if (!t) return null;
+  if (isSetTemplate(t)) {
+    const block = t.modes[mode];
+    if (!block) return null;
+    return {
+      pieces: deepClone(block.pieces || []),
+      roles: deepClone(block.roles || emptyRoles())
+    };
+  }
+  // 旧形式：保存時のモードだけデータあり
+  if (t.mode === mode) {
+    return {
+      pieces: deepClone(t.pieces || []),
+      roles: deepClone(t.roles || emptyRoles())
+    };
+  }
+  return null;
+}
+
+function captureModeFormation(mode) {
+  const b = state.modes[mode];
+  return {
+    pieces: deepClone((b?.pieces || []).filter((p) => p.kind === "player")),
+    roles: deepClone(b?.roles || emptyRoles())
+  };
+}
+
+function captureCurrentSet() {
+  return {
+    attack: captureModeFormation("attack"),
+    defense: captureModeFormation("defense"),
+    free: captureModeFormation("free")
+  };
+}
+
+function countPlayersInFormation(data) {
+  if (!data?.pieces) return 0;
+  return data.pieces.filter((p) => p.kind === "player").length;
+}
+
+function templateMetaText(t) {
+  if (isSetTemplate(t)) {
+    const counts = MODES.map((m) => {
+      const n = countPlayersInFormation(t.modes[m]);
+      return `${MODE_LABEL[m]}${n}`;
+    }).join(" / ");
+    return `セット · ${counts}`;
+  }
+  const n = (t.pieces || []).filter((p) => p.kind === "player").length;
+  return `単一（${MODE_LABEL[t.mode] || "?"}）· 選手 ${n}人`;
+}
+
 function openTemplates() {
+  closeTemplatePreview();
   $("#modal-templates").hidden = false;
   renderTemplateList();
 }
 
+function closeTemplatePreview() {
+  closeTplZoom();
+  const modal = $("#modal-template-preview");
+  if (modal) modal.hidden = true;
+  tplPreviewId = null;
+  for (const id of ["tpl-mini-pieces", "tpl-mini-pieces-before"]) {
+    const layer = $(`#${id}`);
+    if (layer) {
+      layer.classList.remove("animating");
+      layer.innerHTML = "";
+    }
+  }
+}
+
 function renderTemplateList() {
   const list = els.templateList;
+  if (!list) return;
   list.innerHTML = "";
   if (!state.templates.length) {
     list.innerHTML = `<li class="empty-note">保存されたテンプレートはありません</li>`;
@@ -2515,22 +2860,33 @@ function renderTemplateList() {
   }
   for (const t of state.templates) {
     const li = document.createElement("li");
+    li.dataset.id = t.id;
     li.innerHTML = `
+      <button type="button" class="item-drag" data-drag-handle aria-label="ドラッグで並び替え" title="ドラッグで並び替え">⋮⋮</button>
       <div class="item-info">
         <div class="item-name">${escapeHtml(t.name)}</div>
-        <div class="item-meta">${MODE_LABEL[t.mode] || ""} · 選手 ${t.pieces?.filter(p => p.kind === "player").length || 0}人</div>
+        <div class="item-meta">${escapeHtml(templateMetaText(t))}</div>
       </div>
       <div class="item-actions">
-        <button type="button" data-act="load">読込</button>
+        <button type="button" data-act="preview">プレビュー</button>
+        <button type="button" data-act="overwrite" title="攻撃・守備・自由をまとめて上書き">セット上書</button>
+        <button type="button" data-act="overwrite-mode" title="今見ているモードだけ上書き">今モード上書</button>
+        <button type="button" data-act="dup">複製</button>
         <button type="button" data-act="rename">改名</button>
         <button type="button" class="danger" data-act="del">削除</button>
       </div>
     `;
-    li.querySelector('[data-act="load"]').onclick = () => loadTemplate(t.id);
+    li.querySelector('[data-act="preview"]').onclick = () => openTemplatePreview(t.id);
+    li.querySelector('[data-act="overwrite"]').onclick = () => overwriteTemplate(t.id);
+    li.querySelector('[data-act="overwrite-mode"]').onclick = () => overwriteTemplateCurrentMode(t.id);
+    li.querySelector('[data-act="dup"]').onclick = () => duplicateTemplate(t.id);
     li.querySelector('[data-act="rename"]').onclick = () => renameTemplate(t.id);
     li.querySelector('[data-act="del"]').onclick = () => deleteTemplate(t.id);
     list.appendChild(li);
   }
+  bindListDragReorder(list, () => {
+    if (syncArrayOrderFromList(list, state.templates)) scheduleSave(true);
+  });
 }
 
 function saveTemplate() {
@@ -2539,33 +2895,333 @@ function saveTemplate() {
     toast("テンプレート名を入力してください");
     return;
   }
+  const now = Date.now();
   state.templates.unshift({
     id: uid(),
     name,
-    mode: state.currentMode,
-    pieces: deepClone(board().pieces.filter((p) => p.kind === "player")),
-    roles: deepClone(board().roles),
-    createdAt: Date.now()
+    modes: captureCurrentSet(),
+    createdAt: now,
+    updatedAt: now
   });
   els.templateName.value = "";
   renderTemplateList();
   scheduleSave(true);
-  toast("テンプレートを保存しました");
+  toast("3モードをセット保存しました");
 }
 
-function loadTemplate(id) {
+function overwriteTemplate(id) {
   const t = state.templates.find((x) => x.id === id);
   if (!t) return;
-  // 選手配置のみ反映（相手・ボール・描画は維持しない仕様：テンプレ＝基本布陣）
-  const others = board().pieces.filter((p) => p.kind !== "player");
-  board().pieces = [...deepClone(t.pieces), ...others];
-  if (t.roles) board().roles = deepClone(t.roles);
-  pushHistory();
-  seedEmptyModesFrom(state.currentMode);
+  if (!confirm(`「${t.name}」を今の攻撃・守備・自由の配置で上書きしますか？`)) return;
+  t.modes = captureCurrentSet();
+  delete t.pieces;
+  delete t.roles;
+  delete t.mode;
+  t.updatedAt = Date.now();
+  renderTemplateList();
+  if (tplPreviewId === id) renderTemplatePreview({ animate: false });
+  scheduleSave(true);
+  toast(`「${t.name}」をセット上書きしました`);
+}
+
+function overwriteTemplateCurrentMode(id) {
+  const t = state.templates.find((x) => x.id === id);
+  if (!t) return;
+  const mode = state.currentMode;
+  if (
+    !confirm(
+      `「${t.name}」の${MODE_LABEL[mode]}だけを、今の配置で上書きしますか？\n\n他のモードは変更しません。`
+    )
+  ) {
+    return;
+  }
+  ensureTemplateIsSet(t);
+  t.modes[mode] = captureModeFormation(mode);
+  t.updatedAt = Date.now();
+  renderTemplateList();
+  if (tplPreviewId === id) {
+    // プレビュータブを今のモードに合わせて再描画
+    tplPreviewMode = mode;
+    $$(".tpl-mode-tab").forEach((tab) => {
+      const m = tab.dataset.tplMode;
+      const has = Boolean(getTemplateModeData(t, m));
+      tab.disabled = !has;
+      tab.classList.toggle("active", m === mode);
+      tab.classList.toggle("is-empty", !has);
+    });
+    renderTemplatePreview({ animate: false });
+  }
+  scheduleSave(true);
+  toast(`「${t.name}」の${MODE_LABEL[mode]}を上書きしました`);
+}
+
+function duplicateTemplate(id) {
+  const t = state.templates.find((x) => x.id === id);
+  if (!t) return;
+  const idx = state.templates.findIndex((x) => x.id === id);
+  const now = Date.now();
+  const copy = deepClone(t);
+  copy.id = uid();
+  copy.name = `${t.name} のコピー`;
+  copy.createdAt = now;
+  copy.updatedAt = now;
+  state.templates.splice(idx + 1, 0, copy);
+  renderTemplateList();
+  scheduleSave(true);
+  toast(`「${copy.name}」を作成しました`);
+}
+
+function openTemplatePreview(id) {
+  const t = state.templates.find((x) => x.id === id);
+  if (!t) return;
+  tplPreviewId = id;
+  // プレビュー初期モード：セットなら今のモード、旧形式なら保存モード
+  if (isSetTemplate(t)) {
+    tplPreviewMode = state.currentMode;
+  } else {
+    tplPreviewMode = MODES.includes(t.mode) ? t.mode : "attack";
+  }
+  const title = $("#tpl-preview-title");
+  if (title) title.textContent = t.name;
+  $$(".tpl-mode-tab").forEach((tab) => {
+    const m = tab.dataset.tplMode;
+    const has = Boolean(getTemplateModeData(t, m));
+    tab.disabled = !has;
+    tab.classList.toggle("active", m === tplPreviewMode);
+    tab.classList.toggle("is-empty", !has);
+  });
+  $("#modal-template-preview").hidden = false;
+  renderTemplatePreview({ animate: false });
+}
+
+function setTplPreviewMode(mode) {
+  if (!MODES.includes(mode) || mode === tplPreviewMode) return;
+  const t = state.templates.find((x) => x.id === tplPreviewId);
+  if (!t || !getTemplateModeData(t, mode)) {
+    toast("このモードのデータがありません");
+    return;
+  }
+  const prevAfter = captureTplPreviewPositions($("#tpl-mini-pieces"));
+  const prevBefore = captureTplPreviewPositions($("#tpl-mini-pieces-before"));
+  tplPreviewMode = mode;
+  $$(".tpl-mode-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.tplMode === mode);
+  });
+  renderTemplatePreview({
+    animate: true,
+    prevPosAfter: prevAfter,
+    prevPosBefore: prevBefore
+  });
+}
+
+function captureTplPreviewPositions(layer) {
+  const map = new Map();
+  if (!layer) return map;
+  for (const el of layer.querySelectorAll(".tpl-mini-piece[data-name]")) {
+    const name = el.dataset.name;
+    if (!name) continue;
+    map.set(`player:${name}`, {
+      x: parseFloat(el.dataset.x || "0"),
+      y: parseFloat(el.dataset.y || "0")
+    });
+  }
+  return map;
+}
+
+function fillTplPreviewLayer(layer, players, roles, { animate = false, prevPos = null } = {}) {
+  if (!layer) return;
+  layer.classList.remove("animating");
+  layer.innerHTML = "";
+  const targets = [];
+
+  for (const p of players) {
+    const el = document.createElement("div");
+    const role = getRole(p.name, roles);
+    el.className = `tpl-mini-piece role-${role}`;
+    el.dataset.name = p.name;
+    el.dataset.x = String(p.x);
+    el.dataset.y = String(p.y);
+    el.style.left = `${(p.x / BOARD_W) * 100}%`;
+    el.style.top = `${(p.y / BOARD_H) * 100}%`;
+    const label = document.createElement("div");
+    label.className = "tpl-mini-name";
+    // フルネームを縦書き（姓・名を段で）
+    for (const part of splitName(p.name)) {
+      const row = document.createElement("span");
+      row.className = "tpl-mini-name-part";
+      for (const ch of [...part]) {
+        const c = document.createElement("i");
+        c.textContent = ch;
+        row.appendChild(c);
+      }
+      label.appendChild(row);
+    }
+    el.appendChild(label);
+    el.title = p.name;
+    layer.appendChild(el);
+
+    if (animate && prevPos) {
+      const prev = prevPos.get(`player:${p.name}`);
+      if (!prev) {
+        el.classList.add("piece-enter");
+        targets.push({ el, enter: true, x: p.x, y: p.y });
+      } else if (Math.hypot(prev.x - p.x, prev.y - p.y) >= 0.8) {
+        el.style.transition = "none";
+        el.style.left = `${(prev.x / BOARD_W) * 100}%`;
+        el.style.top = `${(prev.y / BOARD_H) * 100}%`;
+        targets.push({ el, enter: false, x: p.x, y: p.y });
+      }
+    }
+  }
+
+  if (!animate || !targets.length) return;
+
+  layer.classList.add("animating");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      for (const item of targets) {
+        if (item.enter) {
+          item.el.classList.add("piece-enter-active");
+        } else {
+          item.el.style.transition = "";
+          item.el.style.left = `${(item.x / BOARD_W) * 100}%`;
+          item.el.style.top = `${(item.y / BOARD_H) * 100}%`;
+        }
+      }
+      window.setTimeout(() => {
+        layer.classList.remove("animating");
+        for (const item of targets) {
+          item.el.classList.remove("piece-enter", "piece-enter-active");
+          item.el.style.transition = "";
+        }
+      }, 520);
+    });
+  });
+}
+
+function renderTemplatePreview({
+  animate = false,
+  prevPosAfter = null,
+  prevPosBefore = null
+} = {}) {
+  const t = state.templates.find((x) => x.id === tplPreviewId);
+  const layerAfter = $("#tpl-mini-pieces");
+  const layerBefore = $("#tpl-mini-pieces-before");
+  const meta = $("#tpl-preview-meta");
+  if (!t || !layerAfter || !layerBefore) return;
+
+  const tplData = getTemplateModeData(t, tplPreviewMode);
+  const currentBoard = state.modes[tplPreviewMode];
+  const currentPlayers = (currentBoard?.pieces || []).filter((p) => p.kind === "player");
+  const currentRoles = currentBoard?.roles || emptyRoles();
+
+  if (!tplData) {
+    layerAfter.innerHTML = "";
+    fillTplPreviewLayer(layerBefore, currentPlayers, currentRoles, {
+      animate,
+      prevPos: prevPosBefore
+    });
+    if (meta) meta.textContent = `${MODE_LABEL[tplPreviewMode]} · テンプレ側のデータがありません`;
+    return;
+  }
+
+  const tplPlayers = (tplData.pieces || []).filter((p) => p.kind === "player");
+  if (meta) {
+    meta.textContent = `${MODE_LABEL[tplPreviewMode]} · 今 ${currentPlayers.length}人 → 読込後 ${tplPlayers.length}人`;
+  }
+
+  fillTplPreviewLayer(layerBefore, currentPlayers, currentRoles, {
+    animate,
+    prevPos: prevPosBefore
+  });
+  fillTplPreviewLayer(layerAfter, tplPlayers, tplData.roles, {
+    animate,
+    prevPos: prevPosAfter
+  });
+}
+
+/** 指定モードへ選手配置を適用（相手・ボール・描画は維持） */
+function applyFormationToMode(mode, data) {
+  if (!data || !state.modes[mode]) return false;
+  const b = state.modes[mode];
+  const others = (b.pieces || []).filter((p) => p.kind !== "player");
+  b.pieces = [...deepClone(data.pieces || []), ...others];
+  b.roles = deepClone(data.roles || emptyRoles());
+  return true;
+}
+
+function loadTemplateSet() {
+  const t = state.templates.find((x) => x.id === tplPreviewId);
+  if (!t) return;
+
+  if (
+    !confirm(
+      `「${t.name}」のセットを読み込みますか？\n\n各モードの自チーム選手配置が置き換わります。\n相手・ボール・描画はそのまま残ります。`
+    )
+  ) {
+    return;
+  }
+
+  if (isSetTemplate(t)) {
+    let n = 0;
+    for (const m of MODES) {
+      const data = getTemplateModeData(t, m);
+      if (!data) continue;
+      applyFormationToMode(m, data);
+      pushHistory(m);
+      n++;
+    }
+    fullRender();
+    closeModal("template-preview");
+    closeModal("templates");
+    scheduleSave();
+    toast(`「${t.name}」を${n}モードに読み込みました`);
+    return;
+  }
+
+  // 旧形式：保存モードへ適用
+  const data = getTemplateModeData(t, t.mode);
+  if (!data) {
+    toast("読み込めるデータがありません");
+    return;
+  }
+  applyFormationToMode(t.mode, data);
+  pushHistory(t.mode);
   fullRender();
+  closeModal("template-preview");
   closeModal("templates");
   scheduleSave();
-  toast(`「${t.name}」を読み込みました`);
+  toast(`「${t.name}」を${MODE_LABEL[t.mode]}に読み込みました`);
+}
+
+function loadTemplateCurrentMode() {
+  const t = state.templates.find((x) => x.id === tplPreviewId);
+  if (!t) return;
+  const mode = state.currentMode;
+  let data = getTemplateModeData(t, mode);
+
+  // 旧形式：今のモードと違う場合は、プレビュー中のデータを今のモードへ入れる
+  if (!data && !isSetTemplate(t)) {
+    data = getTemplateModeData(t, t.mode);
+  }
+  if (!data) {
+    toast(`${MODE_LABEL[mode]}用のデータがありません`);
+    return;
+  }
+  if (
+    !confirm(
+      `「${t.name}」を今の${MODE_LABEL[mode]}に読み込みますか？\n\n自チームの選手配置が置き換わります。\n相手・ボール・描画はそのまま残ります。`
+    )
+  ) {
+    return;
+  }
+  applyFormationToMode(mode, data);
+  pushHistory(mode);
+  fullRender();
+  closeModal("template-preview");
+  closeModal("templates");
+  scheduleSave();
+  toast(`「${t.name}」を${MODE_LABEL[mode]}に読み込みました`);
 }
 
 function renameTemplate(id) {
@@ -2575,24 +3231,37 @@ function renameTemplate(id) {
   if (!name || !name.trim()) return;
   t.name = name.trim();
   renderTemplateList();
+  const title = $("#tpl-preview-title");
+  if (tplPreviewId === id && title) title.textContent = t.name;
   scheduleSave(true);
 }
 
 function deleteTemplate(id) {
   if (!confirm("このテンプレートを削除しますか？")) return;
   state.templates = state.templates.filter((t) => t.id !== id);
+  if (tplPreviewId === id) closeTemplatePreview();
   renderTemplateList();
   scheduleSave(true);
 }
 
 // ---------- スナップ ----------
 function openSnapshots() {
+  closeSnapshotPreview();
   $("#modal-snapshots").hidden = false;
   renderSnapshotList();
 }
 
+function closeSnapshotPreview() {
+  const modal = $("#modal-snapshot-preview");
+  if (modal) modal.hidden = true;
+  snapPreviewId = null;
+  const layer = $("#snap-mini-pieces");
+  if (layer) layer.innerHTML = "";
+}
+
 function renderSnapshotList() {
   const list = els.snapshotList;
+  if (!list) return;
   list.innerHTML = "";
   if (!state.snapshots.length) {
     list.innerHTML = `<li class="empty-note">保存されたスナップはありません</li>`;
@@ -2600,23 +3269,31 @@ function renderSnapshotList() {
   }
   for (const s of state.snapshots) {
     const li = document.createElement("li");
-    const date = new Date(s.createdAt).toLocaleString("ja-JP");
+    li.dataset.id = s.id;
+    const date = new Date(s.updatedAt || s.createdAt).toLocaleString("ja-JP");
+    const drawings = s.board?.drawings?.length || 0;
     li.innerHTML = `
+      <button type="button" class="item-drag" data-drag-handle aria-label="ドラッグで並び替え" title="ドラッグで並び替え">⋮⋮</button>
       <div class="item-info">
         <div class="item-name">${escapeHtml(s.name)}</div>
-        <div class="item-meta">${MODE_LABEL[s.mode] || ""} · ${date}</div>
+        <div class="item-meta">${MODE_LABEL[s.mode] || ""} · ${date}${drawings ? ` · 描画${drawings}` : ""}</div>
       </div>
       <div class="item-actions">
-        <button type="button" data-act="load">読込</button>
+        <button type="button" data-act="preview">プレビュー</button>
+        <button type="button" data-act="overwrite">上書き</button>
         <button type="button" data-act="rename">改名</button>
         <button type="button" class="danger" data-act="del">削除</button>
       </div>
     `;
-    li.querySelector('[data-act="load"]').onclick = () => loadSnapshot(s.id);
+    li.querySelector('[data-act="preview"]').onclick = () => openSnapshotPreview(s.id);
+    li.querySelector('[data-act="overwrite"]').onclick = () => overwriteSnapshot(s.id);
     li.querySelector('[data-act="rename"]').onclick = () => renameSnapshot(s.id);
     li.querySelector('[data-act="del"]').onclick = () => deleteSnapshot(s.id);
     list.appendChild(li);
   }
+  bindListDragReorder(list, () => {
+    if (syncArrayOrderFromList(list, state.snapshots)) scheduleSave(true);
+  });
 }
 
 function saveSnapshot() {
@@ -2625,13 +3302,15 @@ function saveSnapshot() {
     toast("スナップ名を入力してください");
     return;
   }
+  const now = Date.now();
   state.snapshots.unshift({
     id: uid(),
     name,
     mode: state.currentMode,
     piecesLocked: state.piecesLocked,
     board: deepClone(board()),
-    createdAt: Date.now()
+    createdAt: now,
+    updatedAt: now
   });
   els.snapshotName.value = "";
   renderSnapshotList();
@@ -2639,9 +3318,75 @@ function saveSnapshot() {
   toast("スナップを保存しました");
 }
 
-function loadSnapshot(id) {
+function openSnapshotPreview(id) {
   const s = state.snapshots.find((x) => x.id === id);
   if (!s) return;
+  snapPreviewId = id;
+  const title = $("#snap-preview-title");
+  if (title) title.textContent = s.name;
+  const meta = $("#snap-preview-meta");
+  if (meta) {
+    const pieces = s.board?.pieces || [];
+    const players = pieces.filter((p) => p.kind === "player").length;
+    const opponents = pieces.filter((p) => p.kind === "opponent").length;
+    const balls = pieces.filter((p) => p.kind === "ball").length;
+    const drawings = s.board?.drawings?.length || 0;
+    const date = new Date(s.updatedAt || s.createdAt).toLocaleString("ja-JP");
+    meta.textContent = `${MODE_LABEL[s.mode] || "?"} · 選手${players} / 相手${opponents} / ボール${balls}${drawings ? ` / 描画${drawings}` : ""} · ${date}`;
+  }
+  fillSnapPreviewLayer($("#snap-mini-pieces"), s.board);
+  $("#modal-snapshot-preview").hidden = false;
+}
+
+function fillSnapPreviewLayer(layer, boardData) {
+  if (!layer) return;
+  layer.innerHTML = "";
+  for (const p of boardData?.pieces || []) {
+    if (!p || (p.kind !== "player" && p.kind !== "opponent" && p.kind !== "ball")) continue;
+    const el = document.createElement("div");
+    el.className = `snap-mini-piece ${p.kind}`;
+    el.style.left = `${(p.x / BOARD_W) * 100}%`;
+    el.style.top = `${(p.y / BOARD_H) * 100}%`;
+    if (p.kind === "player") {
+      const role = getRole(p.name, boardData.roles) || "none";
+      el.classList.add(`role-${role}`);
+      el.title = p.name || "";
+      el.textContent = [...(p.name || "?")][0] || "?";
+    }
+    layer.appendChild(el);
+  }
+}
+
+function overwriteSnapshot(id) {
+  const s = state.snapshots.find((x) => x.id === id);
+  if (!s) return;
+  if (
+    !confirm(
+      `「${s.name}」を今の盤面で上書きしますか？\n\nモードは現在の「${MODE_LABEL[state.currentMode]}」になります。\n選手・相手・ボール・描画を含めて保存されます。`
+    )
+  ) {
+    return;
+  }
+  s.mode = state.currentMode;
+  s.piecesLocked = state.piecesLocked;
+  s.board = deepClone(board());
+  s.updatedAt = Date.now();
+  renderSnapshotList();
+  if (snapPreviewId === id) openSnapshotPreview(id);
+  scheduleSave(true);
+  toast(`「${s.name}」を上書きしました`);
+}
+
+function loadSnapshot(id = snapPreviewId) {
+  const s = state.snapshots.find((x) => x.id === id);
+  if (!s) return;
+  if (
+    !confirm(
+      `「${s.name}」を読み込みますか？\n\n${MODE_LABEL[s.mode]}モードの盤面全体（選手・相手・ボール・描画）が置き換わります。\n他のモードには影響しません。`
+    )
+  ) {
+    return;
+  }
   // スナップのモードへ切替して盤面全体を復元
   state.currentMode = s.mode;
   $$(".mode-tab").forEach((t) => {
@@ -2651,6 +3396,7 @@ function loadSnapshot(id) {
   if (typeof s.piecesLocked === "boolean") state.piecesLocked = s.piecesLocked;
   resetHistory(s.mode);
   fullRender();
+  closeSnapshotPreview();
   closeModal("snapshots");
   scheduleSave();
   toast(`「${s.name}」を読み込みました`);
@@ -2663,12 +3409,15 @@ function renameSnapshot(id) {
   if (!name || !name.trim()) return;
   s.name = name.trim();
   renderSnapshotList();
+  const title = $("#snap-preview-title");
+  if (snapPreviewId === id && title) title.textContent = s.name;
   scheduleSave(true);
 }
 
 function deleteSnapshot(id) {
   if (!confirm("このスナップを削除しますか？")) return;
   state.snapshots = state.snapshots.filter((s) => s.id !== id);
+  if (snapPreviewId === id) closeSnapshotPreview();
   renderSnapshotList();
   scheduleSave(true);
 }
@@ -2991,24 +3740,32 @@ function bindEvents() {
   $("#btn-collapse-bench")?.addEventListener("click", () => setPanelCollapsed("bench", true));
   $("#btn-expand-bench")?.addEventListener("click", () => setPanelCollapsed("bench", false));
 
-  // メンバー
-  $$(".step-tab").forEach((t) => {
-    t.addEventListener("click", () => {
-      memberStep = Number(t.dataset.step);
-      renderMembersStep();
-    });
-  });
-  $("#btn-members-prev").addEventListener("click", () => {
-    memberStep = Math.max(1, memberStep - 1);
-    renderMembersStep();
-  });
-  $("#btn-members-next").addEventListener("click", () => {
-    memberStep = Math.min(3, memberStep + 1);
-    renderMembersStep();
-  });
-  $("#btn-members-done").addEventListener("click", applyMembers);
+  // メンバー（1画面エディタ）
+  $("#btn-members-clear")?.addEventListener("click", clearDraftMembers);
+  $("#btn-members-done")?.addEventListener("click", applyMembers);
   $("#btn-save-template").addEventListener("click", saveTemplate);
   $("#btn-save-snapshot").addEventListener("click", saveSnapshot);
+  $("#btn-tpl-back")?.addEventListener("click", () => closeTemplatePreview());
+  $("#btn-tpl-zoom-back")?.addEventListener("click", () => closeTplZoom());
+  $$("[data-tpl-zoom]").forEach((el) => {
+    el.addEventListener("click", () => openTplZoom(el.dataset.tplZoom));
+  });
+  $$(".tpl-mode-tab").forEach((tab) => {
+    tab.addEventListener("click", () => setTplPreviewMode(tab.dataset.tplMode));
+  });
+  $("#btn-tpl-load-set")?.addEventListener("click", loadTemplateSet);
+  $("#btn-tpl-load-current")?.addEventListener("click", loadTemplateCurrentMode);
+  $("#btn-tpl-overwrite-set")?.addEventListener("click", () => {
+    if (tplPreviewId) overwriteTemplate(tplPreviewId);
+  });
+  $("#btn-tpl-overwrite-current")?.addEventListener("click", () => {
+    if (tplPreviewId) overwriteTemplateCurrentMode(tplPreviewId);
+  });
+  $("#btn-snap-back")?.addEventListener("click", () => closeSnapshotPreview());
+  $("#btn-snap-load")?.addEventListener("click", () => loadSnapshot());
+  $("#btn-snap-overwrite")?.addEventListener("click", () => {
+    if (snapPreviewId) overwriteSnapshot(snapPreviewId);
+  });
 
   document.querySelectorAll("[data-close]").forEach((el) => {
     el.addEventListener("click", () => closeModal(el.dataset.close));
@@ -3043,6 +3800,18 @@ function bindEvents() {
     if (e.key === "Escape") {
       setCopyMenuOpen(false);
       setPresentMode(false);
+      if (!$("#modal-tpl-zoom")?.hidden) {
+        closeTplZoom();
+        return;
+      }
+      if (!$("#modal-template-preview")?.hidden) {
+        closeTemplatePreview();
+        return;
+      }
+      if (!$("#modal-snapshot-preview")?.hidden) {
+        closeSnapshotPreview();
+        return;
+      }
       closeModal("members");
       closeModal("templates");
       closeModal("snapshots");
@@ -3076,7 +3845,6 @@ async function boot() {
         playerPool: "#player-pool",
         syncBadge: "#sync-badge",
         lockLabel: "#lock-label",
-        lockLabelPresent: "#lock-label-present",
         btnLock: "#btn-lock",
         btnLockPresent: "#btn-lock-present",
         btnZoomReset: "#btn-zoom-reset",
