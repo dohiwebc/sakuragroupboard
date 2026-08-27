@@ -2511,6 +2511,11 @@ body.present-mode .toast {
   .player-count-wrap {
     padding: 4px 8px;
   }
+
+  /* コート横：コート上の選手名を少し小さく（縦画面は変更しない） */
+  .piece-player {
+    font-size: clamp(6px, 22cqw, 10px);
+  }
 }
 
 /* --- PC（広い画面） --- */
