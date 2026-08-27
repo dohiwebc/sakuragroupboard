@@ -57,10 +57,14 @@ button, input { font-family: inherit; }
 
 .app {
   display: grid;
-  grid-template-rows: var(--header-h) 1fr;
+  /* ホーム画面追加（PWA）時、時計・バッテリーとヘッダーが重ならないよう上余白を確保 */
+  grid-template-rows: calc(var(--header-h) + env(safe-area-inset-top, 0px)) 1fr;
   height: 100dvh;
   width: 100%;
   max-width: 100vw;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  box-sizing: border-box;
 }
 
 /* ===== Header ===== */
@@ -70,10 +74,12 @@ button, input { font-family: inherit; }
   justify-content: space-between;
   gap: 8px;
   padding: 0 10px;
+  padding-top: env(safe-area-inset-top, 0px);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   z-index: 20;
   flex-wrap: nowrap;
+  box-sizing: border-box;
 }
 @media (max-width: 900px) {
   .brand { display: none; }
