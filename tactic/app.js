@@ -428,7 +428,11 @@ function layoutSidePanels() {
       bench.style.maxHeight = `${benchMax}px`;
     }
   } else {
-    // 左右余白モード：左カラムを左端寄せ（ツール／クイック／操作を揃える）
+    // 左右余白モード：左＝ツール、右＝ベンチ
+    // 横画面のみ操作バーを右下へ。縦画面の左右モードは左下のまま（変更しない）
+    const landscape = window.matchMedia("(orientation: landscape)").matches;
+    // 横：2×3グリッド＋閉じる行分。縦画面の左右モードは従来スロット
+    const actionSlot = landscape ? 168 : ACTION_SLOT;
     const toolW = Math.max(44, Math.min(72, leftGap - pad * 2));
     const benchW = Math.max(120, Math.min(220, rightGap - pad * 2));
     const leftCol = pad;
@@ -440,21 +444,25 @@ function layoutSidePanels() {
       toolbar.style.bottom = "auto";
       toolbar.style.width = `${toolW}px`;
       toolbar.style.height = "auto";
-      // 左下に操作バーがあるのでその分を避ける
-      toolbar.style.maxHeight = `calc(100% - ${pad * 2 + ACTION_SLOT}px)`;
+      // 縦画面のみ左下操作バー分を避ける。横は操作が右下なので左はフル高さ
+      toolbar.style.maxHeight = landscape
+        ? `calc(100% - ${pad * 2}px)`
+        : `calc(100% - ${pad * 2 + ACTION_SLOT}px)`;
     }
     if (bench) {
       bench.style.right = `${rightCol}px`;
       bench.style.left = "auto";
       bench.style.top = `${pad}px`;
-      // 右はベンチのみ：下端近くまで枠を使える
       bench.style.bottom = "auto";
       bench.style.width = `${benchW}px`;
       bench.style.height = "auto";
-      bench.style.maxHeight = `calc(100% - ${pad * 2}px)`;
+      // 横：右下に操作バーを置くため下端を確保。縦の左右モードは従来どおり
+      bench.style.maxHeight = landscape
+        ? `calc(100% - ${pad * 2 + actionSlot}px)`
+        : `calc(100% - ${pad * 2}px)`;
     }
-    layoutActionBar(pad, ACTION_SLOT, false, leftCol, toolW);
-    syncExpandButtonPositions(leftCol);
+    layoutActionBar(pad, actionSlot, false, leftCol, toolW, rightCol, benchW);
+    syncExpandButtonPositions(leftCol, rightCol);
     syncTabletQuickBar(leftCol, toolW);
     return;
   }
@@ -463,8 +471,16 @@ function layoutSidePanels() {
   syncTabletQuickBar();
 }
 
-/** 操作バー：縦＝右下、左右モード＝左下（内容幅・左端揃え） */
-function layoutActionBar(pad, actionSlot, useVertical = null, leftCol = null, toolW = null) {
+/** 操作バー：縦モード＝右下／横の左右モード＝右下／縦画面の左右モード＝左下 */
+function layoutActionBar(
+  pad,
+  actionSlot,
+  useVertical = null,
+  leftCol = null,
+  toolW = null,
+  rightCol = null,
+  benchW = null
+) {
   const actionBar = document.getElementById("action-bar");
   if (!actionBar) return;
   if (document.body.classList.contains("present-mode")) return;
@@ -472,28 +488,40 @@ function layoutActionBar(pad, actionSlot, useVertical = null, leftCol = null, to
   const area = document.querySelector(".board-area");
   const vertical =
     useVertical ?? area?.classList.contains("gutter-vertical") ?? false;
+  const landscape = window.matchMedia("(orientation: landscape)").matches;
+  // 横＋左右余白だけ右下。縦画面（左右余白含む）は従来どおり
+  const placeRight = vertical || (landscape && !vertical);
 
-  actionBar.classList.toggle("actions-left", !vertical);
+  actionBar.classList.toggle("actions-left", !placeRight);
   actionBar.style.bottom = `${pad}px`;
-  actionBar.style.minHeight = `${Math.max(40, actionSlot - 8)}px`;
 
-  if (vertical) {
+  if (placeRight) {
+    const right =
+      landscape && !vertical && rightCol != null ? rightCol : pad;
     actionBar.style.left = "auto";
-    actionBar.style.right = `${pad}px`;
-    actionBar.style.width = "max-content";
-    actionBar.style.maxWidth = `calc(100% - ${pad * 2}px)`;
+    actionBar.style.right = `${right}px`;
+    if (landscape && !vertical && benchW != null) {
+      // 横：ベンチ列幅の 2×3 パネル（縦画面は触らない）
+      actionBar.style.width = `${benchW}px`;
+      actionBar.style.maxWidth = `${benchW}px`;
+      actionBar.style.minHeight = "";
+    } else {
+      actionBar.style.width = "max-content";
+      actionBar.style.maxWidth = `calc(100% - ${pad * 2}px)`;
+      actionBar.style.minHeight = `${Math.max(40, actionSlot - 8)}px`;
+    }
   } else {
     const left = leftCol ?? pad;
     actionBar.style.left = `${left}px`;
     actionBar.style.right = "auto";
     actionBar.style.width = "max-content";
-    // コートへ大きくはみ出さない程度に制限（折り返し可）
     actionBar.style.maxWidth = `calc(100% - ${left + pad}px)`;
+    actionBar.style.minHeight = `${Math.max(40, actionSlot - 8)}px`;
   }
 }
 
 /** 展開ボタンを、折りたたみボタンと同じ位置に合わせる */
-function syncExpandButtonPositions(leftCol = null) {
+function syncExpandButtonPositions(leftCol = null, rightCol = null) {
   const area = document.querySelector(".board-area");
   const toolbar = document.getElementById("toolbar");
   const bench = document.getElementById("bench-panel");
@@ -502,7 +530,10 @@ function syncExpandButtonPositions(leftCol = null) {
   if (!area) return;
 
   const vertical = area.classList.contains("gutter-vertical");
+  const landscape = window.matchMedia("(orientation: landscape)").matches;
   const toolsLeft = leftCol != null ? `${leftCol}px` : (toolbar?.style.left || "6px");
+  // 横＋左右余白：操作展開も右下。縦画面は従来どおり
+  const actionsOnRight = vertical || (landscape && !vertical);
 
   if (expandTools && toolbar) {
     // ツールバーの配置（折りたたみ時の transform に依存しない）
@@ -535,19 +566,30 @@ function syncExpandButtonPositions(leftCol = null) {
   const expandActions = document.getElementById("btn-expand-actions");
   if (expandActions) {
     expandActions.style.top = "auto";
-    expandActions.style.bottom = "8px";
-    // ツール展開ボタンと同じ幅感・やや大きめのタップ面
-    expandActions.style.width = vertical
-      ? "48px"
-      : (toolbar?.style.width || "48px");
-    expandActions.style.height = "44px";
     expandActions.style.removeProperty("transform");
-    if (vertical) {
+    if (landscape && !vertical) {
+      // ベンチ同様：右下の四角（閉じると同位置・同サイズ）
+      const actionBar = document.getElementById("action-bar");
+      const collapseBtn = document.getElementById("btn-collapse-actions");
+      const size = collapseBtn?.offsetWidth || 34;
+      expandActions.style.left = "auto";
+      expandActions.style.right = actionBar?.style.right || (rightCol != null ? `${rightCol}px` : "6px");
+      expandActions.style.bottom = actionBar?.style.bottom || "6px";
+      expandActions.style.width = `${size}px`;
+      expandActions.style.height = `${size}px`;
+      expandActions.style.borderRadius = "10px";
+    } else if (actionsOnRight) {
+      expandActions.style.bottom = "8px";
       expandActions.style.left = "auto";
       expandActions.style.right = "8px";
+      expandActions.style.width = "48px";
+      expandActions.style.height = "44px";
     } else {
+      expandActions.style.bottom = "8px";
       expandActions.style.left = toolsLeft;
       expandActions.style.right = "auto";
+      expandActions.style.width = toolbar?.style.width || "48px";
+      expandActions.style.height = "44px";
     }
   }
 }

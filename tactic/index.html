@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260827z">
+  <link rel="stylesheet" href="style.css?v=20260828f">
 </head>
 <body>
   <div id="app" class="app">
@@ -248,8 +248,10 @@
         <aside id="action-bar" class="action-bar edit-only edit-chrome" aria-label="ボード操作">
           <div class="action-bar-scroll">
             <button type="button" id="btn-lock" class="action-btn" title="コマ固定切替">
-              <svg class="icon-unlock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
-              <svg class="icon-lock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span class="lock-icons" aria-hidden="true">
+                <svg class="icon-unlock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                <svg class="icon-lock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </span>
               <span id="lock-label">配置編集</span>
             </button>
             <div class="pool-compact pool-compact-action" aria-label="相手とボール">
@@ -492,6 +494,6 @@
     <button type="button" data-act="del" class="danger">削除</button>
   </div>
 
-  <script type="module" src="app.js?v=20260827z"></script>
+  <script type="module" src="app.js?v=20260828f"></script>
 </body>
 </html>

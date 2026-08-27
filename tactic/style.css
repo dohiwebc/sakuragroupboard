@@ -796,6 +796,171 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
   padding: 8px 10px;
   line-height: 1.25;
 }
+
+/* 横画面のみ：ベンチを 2列×8行、名前は1行（縦は変更しない） */
+@media (orientation: landscape) {
+  .board-area:not(.gutter-vertical) .pool-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 5px;
+    align-content: start;
+  }
+  .board-area:not(.gutter-vertical) .pool-chip {
+    min-height: 36px;
+    padding: 9px 4px;
+    font-size: 10px;
+    white-space: nowrap;
+    text-align: center;
+    line-height: 1.2;
+  }
+  /* コート上コマは苗字／名前の2行を明示 */
+  .piece-player .name {
+    flex-direction: column;
+    gap: 0;
+    line-height: 1.05;
+  }
+  .piece-player .name span {
+    display: block;
+    white-space: nowrap;
+  }
+  /* 横：相手／ボールはベンチに表示（操作バー側は出さない） */
+  .pool-compact-bench {
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .pool-compact-bench .pool-add-btn {
+    flex: 1 1 calc(50% - 2px);
+    min-height: 32px;
+    padding: 6px 4px;
+    font-size: 11px;
+    justify-content: center;
+  }
+  .pool-compact-action {
+    display: none !important;
+  }
+
+  /* 横・左右余白：操作バーを 2×3。閉じる／展開は他バー同様の四角・右下斜め（縦は変更しない） */
+  .board-area:not(.gutter-vertical) .action-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 6px;
+    border-radius: 14px;
+    transform-origin: bottom right;
+    transition:
+      transform 0.42s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.2s ease 0.18s,
+      visibility 0s linear 0.4s,
+      box-shadow 0.3s ease,
+      filter 0.35s ease;
+  }
+  .board-area:not(.gutter-vertical) .action-bar.collapsed {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.14, 0.1);
+    visibility: hidden;
+    box-shadow: none;
+    filter: blur(1px);
+  }
+  .board-area:not(.gutter-vertical) .action-bar:not(.collapsed) {
+    opacity: 1;
+    transform: scale(1, 1);
+    visibility: visible;
+    filter: none;
+    transition:
+      transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.22s ease,
+      visibility 0s linear 0s,
+      box-shadow 0.3s ease,
+      filter 0.25s ease;
+  }
+  .board-area:not(.gutter-vertical) .action-bar-scroll {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(3, minmax(40px, auto));
+    gap: 4px;
+    width: 100%;
+    flex: 0 0 auto;
+  }
+  .board-area:not(.gutter-vertical) .action-bar .action-btn {
+    width: 100%;
+    min-height: 40px;
+    height: 100%;
+    padding: 4px 2px;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    text-align: center;
+    line-height: 1.15;
+    box-sizing: border-box;
+    border-radius: 10px;
+    white-space: normal;
+  }
+  .board-area:not(.gutter-vertical) .action-bar .action-btn svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+  }
+  /* 配置編集：鍵2つを横並びアイコン＋下に文字 */
+  .board-area:not(.gutter-vertical) #btn-lock .lock-icons {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+  .board-area:not(.gutter-vertical) #btn-lock .lock-icons .icon-unlock,
+  .board-area:not(.gutter-vertical) #btn-lock .lock-icons .icon-lock {
+    display: block !important;
+    width: 14px;
+    height: 14px;
+  }
+  .board-area:not(.gutter-vertical) #btn-lock .lock-icons .icon-unlock[hidden],
+  .board-area:not(.gutter-vertical) #btn-lock .lock-icons .icon-lock[hidden] {
+    opacity: 0.32;
+  }
+  .board-area:not(.gutter-vertical) #btn-lock .lock-icons .icon-unlock:not([hidden]),
+  .board-area:not(.gutter-vertical) #btn-lock .lock-icons .icon-lock:not([hidden]) {
+    opacity: 1;
+  }
+  .board-area:not(.gutter-vertical) .action-copy-wrap {
+    width: 100%;
+    height: 100%;
+    display: flex;
+  }
+  .board-area:not(.gutter-vertical) .action-copy-wrap .mode-copy-btn.action-btn {
+    width: 100%;
+  }
+  .board-area:not(.gutter-vertical) .action-copy-wrap .copy-formation-menu {
+    left: auto;
+    right: 0;
+    bottom: calc(100% + 4px);
+  }
+  /* ベンチ／ツールと同様の四角。右下に置き展開と同位置 */
+  .board-area:not(.gutter-vertical) .action-bar .action-collapse {
+    align-self: flex-end;
+    width: 34px;
+    height: 34px;
+    margin-top: 4px;
+    border-radius: 10px;
+    background: transparent;
+  }
+  .board-area:not(.gutter-vertical) .action-bar .action-collapse svg {
+    transform: none;
+  }
+  .board-area:not(.gutter-vertical) .edge-toggle.actions {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px;
+  }
+}
 .pool-chip.on-board { opacity: 0.35; cursor: default; }
 .pool-chip.dragging-source { opacity: 0.4; }
 .pool-chip.role-attacker { border-color: var(--yellow); color: var(--yellow); }
@@ -806,27 +971,9 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
   outline: 2px dashed var(--accent); outline-offset: -2px; background: rgba(255,45,85,.08);
 }
 .pool-compact { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
-/* 相手／ボール：端末の向きで出し分け（gutter 判定に依存しない） */
+/* 相手／ボール：基本はベンチ。操作バー用は常時非表示（横でもベンチへ） */
 .pool-compact-bench { display: flex; }
 .pool-compact-action { display: none !important; }
-@media (orientation: landscape) {
-  .pool-compact-bench { display: none !important; }
-  .pool-compact-action {
-    display: flex !important;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
-  }
-  .pool-compact-action .pool-add-btn {
-    min-height: 36px;
-    padding: 8px 10px;
-    font-size: 12px;
-    border-style: solid;
-    background: var(--surface-2);
-    border-radius: 9px;
-  }
-}
 .pool-add-btn {
   appearance: none; border: 1px dashed var(--border); background: transparent; color: var(--text);
   font-size: 12px; font-weight: 600; padding: 8px 10px; border-radius: 10px; min-height: 36px;
@@ -849,7 +996,16 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
   font-size: 11px; font-weight: 600; padding: 8px 8px; border-radius: 9px; min-height: 34px;
   cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap;
 }
-.action-btn.subtle { color: var(--text-dim); }
+/* 配置編集の鍵アイコン行（横並び用。見た目は横画面CSSで調整） */
+.lock-icons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.lock-icons svg {
+  display: block;
+}
 .action-btn.locked { background: rgba(255,45,85,.2); color: var(--accent); }
 
 /* 下部操作バー（内容幅。縦＝右下／左右モード＝左下） */
@@ -954,9 +1110,17 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
   height: 44px;
   border-radius: 12px;
 }
-.board-area:not(.gutter-vertical) .edge-toggle.actions {
-  /* left は syncExpandButtonPositions でツールと揃える */
-  right: auto;
+/* 縦画面の左右余白：操作展開は左下（JSで left を揃える） */
+@media (orientation: portrait) {
+  .board-area:not(.gutter-vertical) .edge-toggle.actions {
+    right: auto;
+  }
+}
+/* 横画面の左右余白：操作展開は右下（JSで right をベンチに揃える） */
+@media (orientation: landscape) {
+  .board-area:not(.gutter-vertical) .edge-toggle.actions {
+    left: auto;
+  }
 }
 
 .drag-ghost {
