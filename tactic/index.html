@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260825s">
+  <link rel="stylesheet" href="style.css?v=20260827z">
 </head>
 <body>
   <div id="app" class="app">
@@ -21,7 +21,7 @@
     <header class="header">
       <div class="header-left edit-only">
         <h1 class="brand">SAKURA Group</h1>
-        <span id="sync-badge" class="sync-badge" title="保存状態">ローカル</span>
+        <span id="sync-badge" class="sync-badge" title="ローカル保存" aria-label="ローカル保存"></span>
       </div>
 
       <div class="mode-tabs" role="tablist" aria-label="モード切替">
@@ -88,6 +88,11 @@
             <path d="M11 9l-3 3 3 3"/>
           </svg>
         </button>
+        <button type="button" class="edge-toggle actions edit-chrome" id="btn-expand-actions" title="操作バーを表示" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h10"/>
+          </svg>
+        </button>
 
         <div id="board-viewport" class="board-viewport">
           <div id="board-stage" class="board-stage">
@@ -123,6 +128,8 @@
             </button>
             <div id="multi-select-actions" class="multi-select-actions" hidden>
               <button type="button" id="btn-select-all" class="multi-act-btn" title="全選択">全選択</button>
+              <button type="button" id="btn-align-row" class="multi-act-btn" title="選択中の選手を横一列に整列">横一列</button>
+              <button type="button" id="btn-align-col" class="multi-act-btn" title="選択中の選手を縦一列に整列">縦一列</button>
               <button type="button" id="btn-deselect-all" class="multi-act-btn subtle" title="選択解除">解除</button>
             </div>
             <div class="tool-divider"></div>
@@ -196,6 +203,10 @@
             <button type="button" class="ink-mode-btn active" data-arrow-mode="straight" title="直線矢印">直線</button>
             <button type="button" class="ink-mode-btn" data-arrow-mode="free" title="自由線矢印">自由線</button>
           </div>
+          <div id="ink-eraser-mode" class="ink-mode-row" hidden>
+            <button type="button" class="ink-mode-btn active" data-eraser-mode="partial" title="なぞった部分だけ消す">部分</button>
+            <button type="button" class="ink-mode-btn" data-eraser-mode="stroke" title="触れた線をまるごと消す">線ごと</button>
+          </div>
           <div class="ink-style-label">太さ</div>
           <div class="stroke-widths" title="線の太さ">
             <button type="button" class="stroke-btn" data-width="2" title="細"><span style="width:14px;height:2px"></span></button>
@@ -223,7 +234,7 @@
             </button>
           </div>
           <div id="player-pool" class="pool-row"></div>
-          <div class="pool-compact">
+          <div class="pool-compact pool-compact-bench">
             <button type="button" id="btn-add-opponent" class="pool-add-btn" title="相手を追加">
               <span class="opp-dot"></span> 相手
             </button>
@@ -231,25 +242,77 @@
               <span class="ball-dot"></span> ボール
             </button>
           </div>
-          <div class="bench-actions">
+        </aside>
+
+        <!-- 下部操作バー（縦＝右下折りたたみ／横＝左下折りたたみ） -->
+        <aside id="action-bar" class="action-bar edit-only edit-chrome" aria-label="ボード操作">
+          <div class="action-bar-scroll">
             <button type="button" id="btn-lock" class="action-btn" title="コマ固定切替">
               <svg class="icon-unlock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
               <svg class="icon-lock" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" hidden><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <span id="lock-label">配置編集</span>
             </button>
-            <button type="button" id="btn-members" class="action-btn">メンバー</button>
-            <button type="button" id="btn-templates" class="action-btn">テンプレ</button>
-            <button type="button" id="btn-snapshots" class="action-btn">スナップ</button>
-            <div class="mode-copy-wrap bench-copy-wrap">
+            <div class="pool-compact pool-compact-action" aria-label="相手とボール">
+              <button type="button" id="btn-add-opponent-action" class="pool-add-btn" title="相手を追加">
+                <span class="opp-dot"></span> 相手
+              </button>
+              <button type="button" id="btn-add-ball-action" class="pool-add-btn" title="ボールを追加">
+                <span class="ball-dot"></span> ボール
+              </button>
+            </div>
+            <button type="button" id="btn-members" class="action-btn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              メンバー
+            </button>
+            <button type="button" id="btn-templates" class="action-btn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <path d="M14 2v6h6"/>
+                <path d="M8 13h8"/>
+                <path d="M8 17h8"/>
+              </svg>
+              テンプレ
+            </button>
+            <button type="button" id="btn-snapshots" class="action-btn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              スナップ
+            </button>
+            <div class="mode-copy-wrap action-copy-wrap">
               <button type="button" class="action-btn mode-copy-btn" id="btn-copy-formation" aria-expanded="false" aria-haspopup="true" title="陣形を他モードへコピー">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
                 陣形コピー
               </button>
               <div id="copy-formation-menu" class="copy-formation-menu" hidden role="menu">
                 <!-- 開いているモードから他モードへのみ（JSで生成） -->
               </div>
             </div>
-            <button type="button" id="btn-clear-pieces" class="action-btn subtle">コマ全削除</button>
+            <button type="button" id="btn-clear-pieces" class="action-btn subtle">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18"/>
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6"/>
+                <path d="M14 11v6"/>
+              </svg>
+              コマ全削除
+            </button>
           </div>
+          <button type="button" class="panel-collapse-btn action-collapse" id="btn-collapse-actions" title="操作バーをしまう" aria-label="操作バーをしまう">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 6l6 6-6 6"/>
+            </svg>
+          </button>
         </aside>
       </section>
     </div>
@@ -429,6 +492,6 @@
     <button type="button" data-act="del" class="danger">削除</button>
   </div>
 
-  <script type="module" src="app.js?v=20260825s"></script>
+  <script type="module" src="app.js?v=20260827z"></script>
 </body>
 </html>

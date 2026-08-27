@@ -80,14 +80,67 @@ button, input { font-family: inherit; }
   .sync-badge { display: none; }
   .mode-tab { padding: 6px 10px; font-size: 12px; }
 }
+
+/* 縦画面のみ：左にブランド＋インジケータ、それ以外の操作を右寄せ
+   ※ 横画面のヘッダーは一切変更しない */
+@media (orientation: portrait) {
+  .header {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .brand {
+    display: block !important;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    line-height: 1;
+  }
+  .sync-badge {
+    display: block !important;
+    width: 10px;
+    height: 10px;
+  }
+  /* 攻撃／守備／自由・選手数は左寄りすぎないよう少し右へ */
+  .mode-tabs {
+    margin-left: 28px;
+    flex-shrink: 0;
+  }
+  .player-count-wrap {
+    flex-shrink: 0;
+  }
+  /* ズーム等・説明は右端に残す */
+  .header-center-tools {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .header-right {
+    flex-shrink: 0;
+  }
+}
+
 .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
 .sync-badge {
-  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
-  background: var(--surface-2); color: var(--text-dim); white-space: nowrap;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: none;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  overflow: hidden;
 }
-.sync-badge.cloud { color: var(--green); background: rgba(48, 209, 88, 0.15); }
-.sync-badge.error { color: var(--danger); }
+.sync-badge.cloud { background: rgba(48, 209, 88, 0.75); }
+.sync-badge.error { background: rgba(255, 69, 58, 0.85); }
 .mode-tabs { display: flex; background: var(--bg); border-radius: 8px; padding: 2px; gap: 2px; }
 .mode-tab {
   appearance: none; border: none; background: transparent; color: var(--text-dim);
@@ -302,6 +355,7 @@ button, input { font-family: inherit; }
   gap: 4px;
   padding: 6px 4px;
   width: 48px;
+  box-sizing: border-box;
   background: rgba(28, 28, 30, 0.88);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -399,18 +453,22 @@ body.present-mode .tablet-quick-bar:not([hidden]) {
   position: absolute;
   right: 6px;
   top: 8px;
-  bottom: 8px;
+  bottom: auto;
+  height: auto;
+  max-height: calc(100% - 16px);
   width: var(--bench-w);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   padding: 6px;
   background: rgba(28, 28, 30, 0.88);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-left: 1px solid var(--border);
   min-height: 0;
-  overflow: hidden;
+  /* 選手リストはスクロールせず枠を伸ばす。枠が画面上限に達したときのみパネル全体 */
+  overflow-x: hidden;
+  overflow-y: auto;
   transform-origin: top right;
   transition:
     transform 0.42s cubic-bezier(0.4, 0, 0.2, 1),
@@ -476,7 +534,7 @@ body.present-mode .tablet-quick-bar:not([hidden]) {
   bottom: 6px;
   width: auto !important;
   height: auto;
-  max-height: 150px;
+  max-height: min(42dvh, 360px);
   transform-origin: bottom right;
 }
 .board-area.gutter-vertical .bench-panel.side-overlay.collapsed {
@@ -484,8 +542,8 @@ body.present-mode .tablet-quick-bar:not([hidden]) {
 }
 .board-area.gutter-vertical .pool-row {
   flex-direction: row;
-  overflow-x: auto;
-  overflow-y: hidden;
+  flex-wrap: wrap;
+  overflow: visible;
 }
 .board-area.gutter-vertical .bench-actions,
 .board-area.gutter-vertical .pool-compact {
@@ -715,14 +773,28 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
 .bench-header .panel-collapse-btn { width: 28px; height: 28px; border-radius: 8px; }
 .pool-label { font-size: 10px; font-weight: 700; color: var(--text-dim); letter-spacing: 0.04em; }
 .pool-row {
-  display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overflow-x: hidden;
-  flex: 1; min-height: 0; padding-right: 2px; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+  display: flex; flex-direction: column; gap: 4px;
+  /* 内容に合わせて枠を伸ばす（選手欄だけスクロールしない） */
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-right: 2px;
 }
 .pool-chip {
   flex: 0 0 auto; appearance: none; border: 1px solid var(--border); background: var(--surface-2);
   color: var(--text); font-size: 11px; font-weight: 600; padding: 7px 8px; border-radius: 10px;
   min-height: 34px; cursor: grab; white-space: nowrap; line-height: 1.2;
   touch-action: none; user-select: none; text-align: left;
+  position: relative;
+  box-sizing: border-box;
+}
+/* 左右モードの右ベンチ：チップ同士が重なって見えないよう間隔を確保 */
+.board-area:not(.gutter-vertical) .pool-row {
+  gap: 6px;
+}
+.board-area:not(.gutter-vertical) .pool-chip {
+  min-height: 38px;
+  padding: 8px 10px;
+  line-height: 1.25;
 }
 .pool-chip.on-board { opacity: 0.35; cursor: default; }
 .pool-chip.dragging-source { opacity: 0.4; }
@@ -734,6 +806,27 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
   outline: 2px dashed var(--accent); outline-offset: -2px; background: rgba(255,45,85,.08);
 }
 .pool-compact { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+/* 相手／ボール：端末の向きで出し分け（gutter 判定に依存しない） */
+.pool-compact-bench { display: flex; }
+.pool-compact-action { display: none !important; }
+@media (orientation: landscape) {
+  .pool-compact-bench { display: none !important; }
+  .pool-compact-action {
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+  }
+  .pool-compact-action .pool-add-btn {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 12px;
+    border-style: solid;
+    background: var(--surface-2);
+    border-radius: 9px;
+  }
+}
 .pool-add-btn {
   appearance: none; border: 1px dashed var(--border); background: transparent; color: var(--text);
   font-size: 12px; font-weight: 600; padding: 8px 10px; border-radius: 10px; min-height: 36px;
@@ -758,6 +851,113 @@ body.tool-multiselect .board-viewport { cursor: crosshair; }
 }
 .action-btn.subtle { color: var(--text-dim); }
 .action-btn.locked { background: rgba(255,45,85,.2); color: var(--accent); }
+
+/* 下部操作バー（内容幅。縦＝右下／左右モード＝左下） */
+.action-bar {
+  position: absolute;
+  left: auto;
+  right: 8px;
+  bottom: 8px;
+  z-index: 22;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  min-height: 44px;
+  width: max-content;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+  background: rgba(28, 28, 30, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  transform-origin: bottom right;
+  transition:
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.22s ease,
+    visibility 0s linear 0s;
+}
+.action-bar.collapsed {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scale(0.08, 0.55) translateX(40%);
+  transition:
+    transform 0.35s cubic-bezier(0.4, 0, 1, 1),
+    opacity 0.2s ease,
+    visibility 0s linear 0.28s;
+}
+/* 左右余白モード：左寄せ・左へ折りたたむ（left は JS でツールと揃える） */
+.action-bar.actions-left {
+  right: auto;
+  transform-origin: bottom left;
+}
+.action-bar.actions-left.collapsed {
+  transform: scale(0.08, 0.55) translateX(-40%);
+}
+.action-bar.actions-left .action-collapse {
+  order: -1;
+}
+.action-bar.actions-left .action-collapse svg {
+  transform: scaleX(-1);
+}
+.action-bar.actions-left .action-copy-wrap .copy-formation-menu {
+  left: 0;
+  right: auto;
+}
+.action-bar .action-collapse {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+.action-bar-scroll {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+}
+.action-bar .action-btn {
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.action-copy-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: auto;
+}
+.action-copy-wrap .mode-copy-btn.action-btn {
+  width: auto;
+}
+.action-copy-wrap .copy-formation-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: auto;
+  right: 0;
+  transform: none;
+  width: max-content;
+}
+.edge-toggle.actions {
+  right: 6px;
+  bottom: 8px;
+  top: auto;
+  left: auto;
+  width: 48px;
+  height: 44px;
+  border-radius: 12px;
+}
+.board-area:not(.gutter-vertical) .edge-toggle.actions {
+  /* left は syncExpandButtonPositions でツールと揃える */
+  right: auto;
+}
 
 .drag-ghost {
   position: fixed; z-index: 1000; pointer-events: none; display: flex; align-items: center;
@@ -837,6 +1037,7 @@ body.present-mode .header-right {
   transform: translateY(-50%);
 }
 body.present-mode .toolbar .panel-collapse-btn { display: none; }
+body.present-mode .action-bar { display: none !important; }
 body.present-mode .main { grid-template-columns: 1fr; }
 
 /* ===== Pieces ===== */
@@ -885,17 +1086,20 @@ body.present-mode .main { grid-template-columns: 1fr; }
 .piece-player {
   width: 6.4%;
   aspect-ratio: 5 / 7;
-  min-width: 40px;
-  min-height: 56px;
-  max-width: 54px;
+  /* min/max を付けない：横画面で実寸が膨らみコマ同士が重なるのを防ぐ */
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  container-type: size;
   border-radius: 999px;
   border: 2px solid rgba(0, 0, 0, 0.35);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  font-size: clamp(9px, 1.2vw, 13px);
+  font-size: clamp(8px, 28cqw, 13px);
   font-weight: 700;
   line-height: 1.1;
   color: var(--piece-text);
   padding: 3px 2px;
+  box-sizing: border-box;
 }
 
 .piece-player.role-attacker { background: var(--piece-attacker); }
@@ -916,12 +1120,13 @@ body.present-mode .main { grid-template-columns: 1fr; }
 .piece-opponent {
   width: 6.8%;
   aspect-ratio: 1;
-  min-width: 48px;
-  min-height: 48px;
+  min-width: 0;
+  min-height: 0;
   border-radius: 50%;
   background: var(--piece-opponent);
   border: 2.5px solid rgba(0, 0, 0, 0.5);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
 }
 
 .piece-opponent::after {
@@ -935,12 +1140,13 @@ body.present-mode .main { grid-template-columns: 1fr; }
 .piece-ball {
   width: 5.2%;
   aspect-ratio: 1;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 0;
+  min-height: 0;
   border-radius: 50%;
   background: url("assets/ball.png?v=20260825b") center / cover no-repeat;
   border: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
 }
 
 .piece-ball::after {
@@ -1804,7 +2010,7 @@ body.present-mode .toast {
     padding 0.28s ease;
 }
 .multi-select-actions.is-open {
-  max-height: 120px;
+  max-height: 220px;
   opacity: 1;
   gap: 4px;
   padding: 2px 4px 8px;
@@ -1830,8 +2036,9 @@ body.present-mode .toast {
 .multi-act-btn.subtle { color: var(--text-dim); }
 .board-area.gutter-vertical .multi-select-actions.is-open {
   flex-direction: row;
+  flex-wrap: wrap;
   width: auto;
-  max-height: 48px;
+  max-height: 88px;
   padding: 0 4px 4px;
 }
 .board-area.gutter-vertical .multi-act-btn {
@@ -1868,6 +2075,15 @@ body.present-mode .toast {
   stroke-linejoin: round;
   pointer-events: stroke;
 }
+.draw-layer.tool-select .shape {
+  cursor: grab;
+}
+.draw-layer.tool-select .shape.is-selected {
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.85));
+}
+.draw-layer.tool-select .shape.is-selected .arrow-head {
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.9));
+}
 
 .draw-layer.tool-eraser .shape {
   cursor: pointer;
@@ -1879,7 +2095,7 @@ body.present-mode .toast {
 }
 
 @media (orientation: landscape) and (max-height: 900px) {
-  .piece-player { min-width: 42px; min-height: 58px; font-size: clamp(10px, 1.3vw, 14px); }
+  .piece-player { font-size: clamp(7px, 26cqw, 12px); }
 }
 
 /* =========================================================
@@ -1953,23 +2169,38 @@ body.present-mode .toast {
   }
 
   .board-area.gutter-vertical .bench-panel.side-overlay {
-    max-height: min(220px, 38dvh);
+    max-height: min(42dvh, 360px);
     left: 4px;
     right: 4px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
   }
 
-  .board-area.gutter-vertical .pool-row {
-    max-height: 72px;
-  }
-
-  .board-area.gutter-vertical .bench-actions .action-btn,
   .board-area.gutter-vertical .pool-add-btn {
     min-height: 34px;
     font-size: 12px;
     padding: 6px 8px;
+  }
+
+  .action-bar {
+    bottom: max(4px, env(safe-area-inset-bottom));
+    width: max-content;
+    max-width: calc(100% - 8px);
+    padding: 5px 6px;
+    gap: 4px;
+  }
+
+  .action-bar:not(.actions-left) {
+    left: auto;
+    right: 4px;
+  }
+
+  .action-bar.actions-left {
+    right: auto;
+  }
+
+  .action-bar .action-btn {
+    min-height: 32px;
+    padding: 6px 8px;
+    font-size: 11px;
   }
 
   .tablet-quick-bar {
@@ -2077,7 +2308,7 @@ body.present-mode .toast {
   }
 
   .board-area.gutter-vertical .bench-panel.side-overlay {
-    max-height: min(84px, 34dvh);
+    max-height: min(38dvh, 200px);
   }
 
   .tablet-quick-bar {

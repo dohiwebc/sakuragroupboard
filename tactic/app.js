@@ -20,7 +20,7 @@ function defaultInkPrefs() {
     arrow: { color: "#ff3b30", width: 3.5, opacity: 1, style: "straight" },
     line: { color: "#007aff", width: 3.5, opacity: 1 },
     ellipse: { color: "#34c759", width: 3.5, opacity: 1 },
-    eraser: { width: 3.5 }
+    eraser: { width: 3.5, mode: "partial" }
   };
 }
 
@@ -132,6 +132,7 @@ function createInitialState() {
     penWidth: pen.width,
     penOpacity: pen.opacity ?? 1,
     arrowStyle: (inkPrefs.arrow && inkPrefs.arrow.style) || "straight",
+    eraserMode: (inkPrefs.eraser && inkPrefs.eraser.mode) === "stroke" ? "stroke" : "partial",
     modes: {
       attack: emptyBoard(),
       defense: emptyBoard(),
@@ -222,6 +223,8 @@ let pinchStartZoom = 1;
 let pinchLastMid = null;
 let drawing = null; // { id, type, ... }
 let dragPiece = null; // { id, offsetX, offsetY } or group drag
+let dragDrawing = null; // 描画1本の移動 { id, pointerId, startBoard, origin, moved }
+let selectedDrawingId = null;
 let benchDrag = null; // ベンチ→コートのドラッグ状態
 let liveInkEl = null; // 描画中のライブSVG要素
 let eraserSession = null; // ドラッグ消しゴム用
@@ -395,8 +398,10 @@ function layoutSidePanels() {
   area.classList.toggle("gutter-vertical", useVertical);
 
   const pad = 6;
+  // ベンチ下に常時確保（操作バー／展開ボタン用）。開閉で他バーを動かさない
+  const ACTION_SLOT = 52;
   const isPhone = window.matchMedia("(max-width: 640px)").matches;
-  const isPhoneLandscape = window.matchMedia("(orientation: landscape) and (max-height: 500px)").matches;
+
   if (useVertical) {
     // 上下余白モード：CSSクラスに任せる（幅は自動）
     if (toolbar) {
@@ -415,48 +420,80 @@ function layoutSidePanels() {
       bench.style.left = `${pad}px`;
       bench.style.right = `${pad}px`;
       bench.style.top = "auto";
-      bench.style.bottom = `${pad}px`;
+      bench.style.bottom = `${pad + ACTION_SLOT}px`;
       bench.style.width = "";
-      bench.style.height = "";
-      // 縦タブレットの算出は従来どおり。phone のみコートに少し被っても操作面を確保
-      let benchMax = Math.max(100, bottomGap - pad);
-      if (isPhone && !isPhoneLandscape) {
-        benchMax = Math.min(230, Math.max(190, Math.floor(window.innerHeight * 0.34)));
-      } else if (isPhoneLandscape) {
-        benchMax = Math.min(100, Math.max(72, Math.floor(window.innerHeight * 0.36)));
-      }
+      bench.style.height = "auto";
+      // 選手が多いときは枠を大きく（選手欄スクロールはしない）
+      const benchMax = Math.max(120, bottomGap - pad - ACTION_SLOT);
       bench.style.maxHeight = `${benchMax}px`;
     }
   } else {
-    // 左右余白モード：余白幅いっぱいにパネルを置く（ズーム前後で一定）
+    // 左右余白モード：左カラムを左端寄せ（ツール／クイック／操作を揃える）
     const toolW = Math.max(44, Math.min(72, leftGap - pad * 2));
     const benchW = Math.max(120, Math.min(220, rightGap - pad * 2));
+    const leftCol = pad;
+    const rightCol = Math.max(pad, Math.floor((rightGap - benchW) / 2));
     if (toolbar) {
-      toolbar.style.left = `${Math.max(pad, (leftGap - toolW) / 2)}px`;
+      toolbar.style.left = `${leftCol}px`;
       toolbar.style.right = "auto";
       toolbar.style.top = `${pad}px`;
       toolbar.style.bottom = "auto";
       toolbar.style.width = `${toolW}px`;
       toolbar.style.height = "auto";
-      toolbar.style.maxHeight = `calc(100% - ${pad * 2}px)`;
+      // 左下に操作バーがあるのでその分を避ける
+      toolbar.style.maxHeight = `calc(100% - ${pad * 2 + ACTION_SLOT}px)`;
     }
     if (bench) {
-      const bw = benchW;
-      bench.style.right = `${Math.max(pad, (rightGap - bw) / 2)}px`;
+      bench.style.right = `${rightCol}px`;
       bench.style.left = "auto";
       bench.style.top = `${pad}px`;
-      bench.style.bottom = `${pad}px`;
-      bench.style.width = `${bw}px`;
-      bench.style.height = "";
-      bench.style.maxHeight = "";
+      // 右はベンチのみ：下端近くまで枠を使える
+      bench.style.bottom = "auto";
+      bench.style.width = `${benchW}px`;
+      bench.style.height = "auto";
+      bench.style.maxHeight = `calc(100% - ${pad * 2}px)`;
     }
+    layoutActionBar(pad, ACTION_SLOT, false, leftCol, toolW);
+    syncExpandButtonPositions(leftCol);
+    syncTabletQuickBar(leftCol, toolW);
+    return;
   }
+  layoutActionBar(pad, ACTION_SLOT, useVertical);
   syncExpandButtonPositions();
   syncTabletQuickBar();
 }
 
+/** 操作バー：縦＝右下、左右モード＝左下（内容幅・左端揃え） */
+function layoutActionBar(pad, actionSlot, useVertical = null, leftCol = null, toolW = null) {
+  const actionBar = document.getElementById("action-bar");
+  if (!actionBar) return;
+  if (document.body.classList.contains("present-mode")) return;
+
+  const area = document.querySelector(".board-area");
+  const vertical =
+    useVertical ?? area?.classList.contains("gutter-vertical") ?? false;
+
+  actionBar.classList.toggle("actions-left", !vertical);
+  actionBar.style.bottom = `${pad}px`;
+  actionBar.style.minHeight = `${Math.max(40, actionSlot - 8)}px`;
+
+  if (vertical) {
+    actionBar.style.left = "auto";
+    actionBar.style.right = `${pad}px`;
+    actionBar.style.width = "max-content";
+    actionBar.style.maxWidth = `calc(100% - ${pad * 2}px)`;
+  } else {
+    const left = leftCol ?? pad;
+    actionBar.style.left = `${left}px`;
+    actionBar.style.right = "auto";
+    actionBar.style.width = "max-content";
+    // コートへ大きくはみ出さない程度に制限（折り返し可）
+    actionBar.style.maxWidth = `calc(100% - ${left + pad}px)`;
+  }
+}
+
 /** 展開ボタンを、折りたたみボタンと同じ位置に合わせる */
-function syncExpandButtonPositions() {
+function syncExpandButtonPositions(leftCol = null) {
   const area = document.querySelector(".board-area");
   const toolbar = document.getElementById("toolbar");
   const bench = document.getElementById("bench-panel");
@@ -465,11 +502,12 @@ function syncExpandButtonPositions() {
   if (!area) return;
 
   const vertical = area.classList.contains("gutter-vertical");
+  const toolsLeft = leftCol != null ? `${leftCol}px` : (toolbar?.style.left || "6px");
 
   if (expandTools && toolbar) {
     // ツールバーの配置（折りたたみ時の transform に依存しない）
     // ※ transform は CSS の is-visible アニメに任せる
-    expandTools.style.left = toolbar.style.left || "6px";
+    expandTools.style.left = toolsLeft;
     expandTools.style.top = toolbar.style.top || "8px";
     expandTools.style.right = "auto";
     expandTools.style.bottom = "auto";
@@ -485,17 +523,37 @@ function syncExpandButtonPositions() {
     expandBench.style.width = "34px";
     expandBench.style.height = "34px";
     if (vertical) {
+      // ベンチと同じ高さ帯（操作スロットの上）
       expandBench.style.top = "auto";
-      expandBench.style.bottom = bench.style.bottom || "6px";
+      expandBench.style.bottom = bench.style.bottom || "58px";
     } else {
       expandBench.style.top = bench.style.top || "8px";
       expandBench.style.bottom = "auto";
     }
   }
+
+  const expandActions = document.getElementById("btn-expand-actions");
+  if (expandActions) {
+    expandActions.style.top = "auto";
+    expandActions.style.bottom = "8px";
+    // ツール展開ボタンと同じ幅感・やや大きめのタップ面
+    expandActions.style.width = vertical
+      ? "48px"
+      : (toolbar?.style.width || "48px");
+    expandActions.style.height = "44px";
+    expandActions.style.removeProperty("transform");
+    if (vertical) {
+      expandActions.style.left = "auto";
+      expandActions.style.right = "8px";
+    } else {
+      expandActions.style.left = toolsLeft;
+      expandActions.style.right = "auto";
+    }
+  }
 }
 
-/** タブレット／説明モード用クイックバー（左下） */
-function syncTabletQuickBar() {
+/** タブレット／説明モード用クイックバー（左下・ツールと同じ left） */
+function syncTabletQuickBar(leftCol = null, toolW = null) {
   const bar = document.getElementById("tablet-quick-bar");
   if (!bar) return;
 
@@ -509,26 +567,43 @@ function syncTabletQuickBar() {
   bar.hidden = !show;
   if (!show) return;
 
-  // 左下固定（ツールバー位置に依存しない）
-  // ※ 縦タブレット（幅>640）の bottom=156px は従来どおり維持
-  bar.style.left = isPhone ? "4px" : "6px";
+  const area = document.querySelector(".board-area");
+  const toolbar = document.getElementById("toolbar");
+  const vertical = area?.classList.contains("gutter-vertical");
+
+  // 左右モードではツールバーと left／幅を揃える（縦は従来どおり）
+  if (!vertical) {
+    const left =
+      leftCol != null
+        ? leftCol
+        : parseFloat(toolbar?.style.left) || (isPhone ? 4 : 6);
+    const width =
+      toolW != null
+        ? toolW
+        : parseFloat(toolbar?.style.width) || (isPhone ? 44 : 48);
+    bar.style.left = `${left}px`;
+    bar.style.width = `${width}px`;
+  } else {
+    bar.style.left = isPhone ? "4px" : "6px";
+    bar.style.width = "";
+  }
   bar.style.right = "auto";
   bar.style.top = "auto";
+  let bottom = 156;
   if (isPhoneLandscape) {
-    bar.style.bottom = "68px";
+    bottom = 68;
   } else if (isPhone) {
     const bench = document.getElementById("bench-panel");
-    const area = document.querySelector(".board-area");
-    const vertical = area?.classList.contains("gutter-vertical");
     const benchH =
       vertical && bench && !bench.classList.contains("collapsed")
         ? Math.round(bench.getBoundingClientRect().height)
         : 0;
-    bar.style.bottom = `${Math.max(152, benchH + 10)}px`;
-  } else {
-    bar.style.bottom = "156px";
+    bottom = Math.max(152, benchH + 10);
+  } else if (!vertical) {
+    // 左右モード：左下操作バーの上（開閉で位置は変えない）
+    bottom = 62;
   }
-  bar.style.width = "";
+  bar.style.bottom = `${bottom}px`;
 }
 
 function setZoom(z, save = true) {
@@ -707,19 +782,16 @@ function updateLiveInk() {
     return;
   }
   const d = drawing.preview;
+  const g = liveInkEl.closest?.("g.shape") || liveInkEl.parentElement;
   if ((d.type === "pen" || (d.type === "arrow" && d.free)) && liveInkEl.tagName === "path") {
-    liveInkEl.setAttribute("d", pointsToSmoothPath(d.points));
-    if (d.type === "arrow" && d.free) {
-      liveInkEl.setAttribute("marker-end", `url(#${ensureMarker(d.color)})`);
-    }
+    const pts = d.type === "arrow" ? shaftPointsForArrow(d) : (d.points || []);
+    liveInkEl.setAttribute("d", pointsToSmoothPath(pts));
   } else if ((d.type === "line" || (d.type === "arrow" && !d.free)) && liveInkEl.tagName === "line") {
-    liveInkEl.setAttribute("x1", d.x1);
-    liveInkEl.setAttribute("y1", d.y1);
-    liveInkEl.setAttribute("x2", d.x2);
-    liveInkEl.setAttribute("y2", d.y2);
-    if (d.type === "arrow") {
-      liveInkEl.setAttribute("marker-end", `url(#${ensureMarker(d.color)})`);
-    }
+    const shaft = shaftCoordsForStraightArrow(d);
+    liveInkEl.setAttribute("x1", shaft.x1);
+    liveInkEl.setAttribute("y1", shaft.y1);
+    liveInkEl.setAttribute("x2", shaft.x2);
+    liveInkEl.setAttribute("y2", shaft.y2);
   } else if (d.type === "ellipse" && liveInkEl.tagName === "ellipse") {
     liveInkEl.setAttribute("cx", d.cx);
     liveInkEl.setAttribute("cy", d.cy);
@@ -727,44 +799,104 @@ function updateLiveInk() {
     liveInkEl.setAttribute("ry", Math.abs(d.ry));
   } else {
     renderDrawings();
+    return;
   }
+  if (g) attachArrowHead(g, d);
 }
 
 function updateDrawLayerClass() {
   const hidden = state.drawingsVisible === false ? " drawings-hidden" : "";
   els.draw.setAttribute("class", `draw-layer tool-${state.tool}${hidden}`);
-  if (isPieceTool()) {
-    els.draw.style.pointerEvents = "none";
-  } else {
+  // 選択ツールでも描画ヒット用に受け付ける（移動のため）
+  if (state.tool === "select" || !isPieceTool()) {
     els.draw.style.pointerEvents = state.drawingsVisible === false ? "none" : "auto";
+  } else {
+    els.draw.style.pointerEvents = "none";
   }
   document.body.classList.toggle("ink-tool", !isPieceTool());
   document.body.classList.toggle("tool-eraser", state.tool === "eraser");
   document.body.classList.toggle("tool-multiselect", state.tool === "multiselect");
 }
 
-function ensureMarker(color) {
-  const id = `arrowhead-${String(color).replace("#", "")}`;
-  let m = document.getElementById(id);
-  if (!m) {
-    const defs = els.draw.querySelector("defs") || els.draw.appendChild(
-      document.createElementNS("http://www.w3.org/2000/svg", "defs")
-    );
-    m = document.createElementNS("http://www.w3.org/2000/svg", "marker");
-    m.id = id;
-    m.setAttribute("markerWidth", "8");
-    m.setAttribute("markerHeight", "8");
-    m.setAttribute("refX", "6");
-    m.setAttribute("refY", "3");
-    m.setAttribute("orient", "auto");
-    m.setAttribute("markerUnits", "strokeWidth");
-    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    p.setAttribute("d", "M0,0 L6,3 L0,6 Z");
-    p.setAttribute("fill", color);
-    m.appendChild(p);
-    defs.appendChild(m);
+/** 矢印先端の向き（終端付近の点から算出） */
+function getArrowTipGeometry(d) {
+  const width = d.width || state.penWidth || 3.5;
+  const size = Math.max(12, width * 3.4);
+  if (d.free && Array.isArray(d.points) && d.points.length >= 2) {
+    const tip = d.points[d.points.length - 1];
+    let base = d.points[d.points.length - 2];
+    for (let i = d.points.length - 2; i >= 0; i--) {
+      if (dist(d.points[i], tip) >= 10) {
+        base = d.points[i];
+        break;
+      }
+    }
+    const ang = Math.atan2(tip.y - base.y, tip.x - base.x);
+    return { tip, ang, size };
   }
-  return id;
+  if (d.x1 != null && d.x2 != null) {
+    const tip = { x: d.x2, y: d.y2 };
+    const ang = Math.atan2(d.y2 - d.y1, d.x2 - d.x1);
+    return { tip, ang, size };
+  }
+  return null;
+}
+
+function shaftPointsForArrow(d) {
+  const pts = d.points || [];
+  if (pts.length < 2) return pts;
+  const geom = getArrowTipGeometry(d);
+  if (!geom) return pts;
+  const pull = geom.size * 0.72;
+  const cut = {
+    x: geom.tip.x - Math.cos(geom.ang) * pull,
+    y: geom.tip.y - Math.sin(geom.ang) * pull
+  };
+  const out = pts.slice(0, -1);
+  out.push(cut);
+  return out;
+}
+
+function shaftCoordsForStraightArrow(d) {
+  if (d.type !== "arrow" || d.free) {
+    return { x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2 };
+  }
+  const geom = getArrowTipGeometry(d);
+  if (!geom) return { x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2 };
+  const len = Math.hypot(d.x2 - d.x1, d.y2 - d.y1);
+  const pull = Math.min(geom.size * 0.72, Math.max(0, len - 2));
+  return {
+    x1: d.x1,
+    y1: d.y1,
+    x2: d.x2 - Math.cos(geom.ang) * pull,
+    y2: d.y2 - Math.sin(geom.ang) * pull
+  };
+}
+
+function attachArrowHead(g, d) {
+  g.querySelectorAll(".arrow-head").forEach((n) => n.remove());
+  if (d.type !== "arrow") return;
+  const geom = getArrowTipGeometry(d);
+  if (!geom) return;
+  const { tip, ang, size } = geom;
+  const spread = Math.PI / 6.5;
+  const p2 = {
+    x: tip.x - size * Math.cos(ang - spread),
+    y: tip.y - size * Math.sin(ang - spread)
+  };
+  const p3 = {
+    x: tip.x - size * Math.cos(ang + spread),
+    y: tip.y - size * Math.sin(ang + spread)
+  };
+  const ns = "http://www.w3.org/2000/svg";
+  const poly = document.createElementNS(ns, "polygon");
+  poly.classList.add("arrow-head");
+  poly.setAttribute("points", `${tip.x},${tip.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`);
+  poly.setAttribute("fill", d.color || "#ff3b30");
+  poly.setAttribute("fill-opacity", String(clamp(d.opacity ?? 1, 0.05, 1)));
+  poly.setAttribute("stroke", "none");
+  poly.style.pointerEvents = "none";
+  g.appendChild(poly);
 }
 
 function createShapeEl(d) {
@@ -774,21 +906,20 @@ function createShapeEl(d) {
   const g = document.createElementNS(ns, "g");
   g.classList.add("shape");
   g.dataset.id = d.id;
+  if (d.id && d.id === selectedDrawingId) g.classList.add("is-selected");
 
   let el;
   if (d.type === "pen" || (d.type === "arrow" && d.free && d.points)) {
     el = document.createElementNS(ns, "path");
-    el.setAttribute("d", pointsToSmoothPath(d.points || []));
-    if (d.type === "arrow") {
-      el.setAttribute("marker-end", `url(#${ensureMarker(color)})`);
-    }
+    const pts = d.type === "arrow" ? shaftPointsForArrow(d) : (d.points || []);
+    el.setAttribute("d", pointsToSmoothPath(pts));
   } else if (d.type === "line" || d.type === "arrow") {
     el = document.createElementNS(ns, "line");
-    el.setAttribute("x1", d.x1); el.setAttribute("y1", d.y1);
-    el.setAttribute("x2", d.x2); el.setAttribute("y2", d.y2);
-    if (d.type === "arrow") {
-      el.setAttribute("marker-end", `url(#${ensureMarker(color)})`);
-    }
+    const shaft = shaftCoordsForStraightArrow(d);
+    el.setAttribute("x1", shaft.x1);
+    el.setAttribute("y1", shaft.y1);
+    el.setAttribute("x2", shaft.x2);
+    el.setAttribute("y2", shaft.y2);
   } else if (d.type === "ellipse") {
     el = document.createElementNS(ns, "ellipse");
     el.setAttribute("cx", d.cx); el.setAttribute("cy", d.cy);
@@ -800,6 +931,7 @@ function createShapeEl(d) {
   applyInkAttrs(el, color, width, d.opacity ?? 1);
   el.style.pointerEvents = "none";
   g.appendChild(el);
+  attachArrowHead(g, d);
 
   return g;
 }
@@ -840,6 +972,31 @@ function eraseNearPoint(pt) {
     return true;
   }
   return false;
+}
+
+/** 触れた線をまるごと消す */
+function eraseWholeStrokeAt(pt) {
+  const hitR = Math.max(state.penWidth * 5, 16);
+  let changed = false;
+  const next = [];
+  for (const d of board().drawings) {
+    const r = Math.max(hitR, (d.width || 3.5) * 3.2);
+    if (shapeHitsPoint(d, pt, r)) {
+      changed = true;
+      continue;
+    }
+    next.push(d);
+  }
+  if (changed) {
+    board().drawings = next;
+    renderDrawings();
+    return true;
+  }
+  return false;
+}
+
+function applyEraserAt(pt) {
+  return state.eraserMode === "stroke" ? eraseWholeStrokeAt(pt) : eraseNearPoint(pt);
 }
 
 function eraseShapePartial(d, pt, r) {
@@ -982,7 +1139,12 @@ function noteEraserOverPiece(pt) {
 
 function shapeHitsPoint(d, pt, r) {
   if (d.type === "pen" || (d.type === "arrow" && d.free && d.points)) {
-    return (d.points || []).some((p) => dist(p, pt) <= r);
+    const pts = d.points || [];
+    for (let i = 0; i < pts.length; i++) {
+      if (dist(pts[i], pt) <= r) return true;
+      if (i > 0 && distToSegment(pt, pts[i - 1], pts[i]) <= r) return true;
+    }
+    return false;
   }
   if (d.type === "line" || d.type === "arrow") {
     return distToSegment(pt, { x: d.x1, y: d.y1 }, { x: d.x2, y: d.y2 }) <= r;
@@ -994,6 +1156,39 @@ function shapeHitsPoint(d, pt, r) {
     return Math.abs(ring - 1) * Math.max(Math.abs(d.rx), Math.abs(d.ry)) <= r;
   }
   return false;
+}
+
+function hitTopDrawing(pt) {
+  const list = board().drawings;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const d = list[i];
+    const r = Math.max(14, (d.width || 3.5) * 3.2);
+    if (shapeHitsPoint(d, pt, r)) return d;
+  }
+  return null;
+}
+
+function applyDrawingTranslation(target, origin, dx, dy) {
+  if (Array.isArray(origin.points)) {
+    target.points = origin.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+  }
+  if (origin.x1 != null) {
+    target.x1 = origin.x1 + dx;
+    target.y1 = origin.y1 + dy;
+    target.x2 = origin.x2 + dx;
+    target.y2 = origin.y2 + dy;
+  }
+  if (origin.cx != null) {
+    target.cx = origin.cx + dx;
+    target.cy = origin.cy + dy;
+  }
+}
+
+function clearDrawingSelection() {
+  if (!selectedDrawingId && !dragDrawing) return;
+  selectedDrawingId = null;
+  dragDrawing = null;
+  renderDrawings();
 }
 
 function distToSegment(p, a, b) {
@@ -1260,6 +1455,70 @@ function selectAllPieces() {
   multiSelectedIds = new Set(board().pieces.map((p) => p.id));
   syncMultiSelectVisual();
   toast(`${multiSelectedIds.size}個を選択`);
+}
+
+/** 選手コマの論理サイズ（画面上の実寸から換算） */
+function estimatePlayerBoardSize() {
+  const sample = els.pieces?.querySelector(".piece-player");
+  if (sample && els.stage) {
+    const pr = sample.getBoundingClientRect();
+    const sr = els.stage.getBoundingClientRect();
+    if (sr.width > 1 && sr.height > 1 && pr.width > 1 && pr.height > 1) {
+      return {
+        w: (pr.width / sr.width) * BOARD_W,
+        h: (pr.height / sr.height) * BOARD_H
+      };
+    }
+  }
+  // CSS: width 6.4%, aspect 5/7
+  const w = BOARD_W * 0.064;
+  return { w, h: w * (7 / 5) };
+}
+
+/** 選択中の選手を横一列／縦一列に整列 */
+function alignSelectedPieces(axis) {
+  const selected = board().pieces.filter(
+    (p) => multiSelectedIds.has(p.id) && p.kind === "player"
+  );
+  if (selected.length < 2) {
+    toast("選手を2人以上選択してください");
+    return;
+  }
+
+  const size = estimatePlayerBoardSize();
+  // 中心間 = コマ実寸 → 縦横どちらも縁がちょうど触れる程度
+  const gap = axis === "horizontal" ? size.w : size.h;
+  const margin = Math.max(28, (axis === "horizontal" ? size.w : size.h) / 2 + 4);
+  const n = selected.length;
+
+  if (axis === "horizontal") {
+    const cy = selected.reduce((s, p) => s + p.y, 0) / n;
+    const sorted = [...selected].sort((a, b) => a.x - b.x);
+    const total = (n - 1) * gap;
+    let start = selected.reduce((s, p) => s + p.x, 0) / n - total / 2;
+    start = clamp(start, margin, BOARD_W - margin - total);
+    const y = clamp(cy, margin, BOARD_H - margin);
+    sorted.forEach((p, i) => {
+      p.x = start + i * gap;
+      p.y = y;
+    });
+  } else {
+    const cx = selected.reduce((s, p) => s + p.x, 0) / n;
+    const sorted = [...selected].sort((a, b) => a.y - b.y);
+    const total = (n - 1) * gap;
+    let start = selected.reduce((s, p) => s + p.y, 0) / n - total / 2;
+    start = clamp(start, margin, BOARD_H - margin - total);
+    const x = clamp(cx, margin, BOARD_W - margin);
+    sorted.forEach((p, i) => {
+      p.x = x;
+      p.y = start + i * gap;
+    });
+  }
+
+  pushHistory();
+  renderPieces();
+  scheduleSave();
+  toast(axis === "horizontal" ? "横一列に並べました" : "縦一列に並べました");
 }
 
 function toggleMultiSelectId(id) {
@@ -1871,6 +2130,7 @@ function setTool(tool, { fromClick = false } = {}) {
   hidePieceActions();
   clearLongPress();
   hideMarquee();
+  if (tool !== "select") clearDrawingSelection();
 
   if (prev === "multiselect" && tool !== "multiselect") {
     clearMultiSelection();
@@ -1899,6 +2159,7 @@ function applyInkPrefsToState(tool) {
   const p = inkPrefs[tool] || defaultInkPrefs()[tool] || {};
   if (tool === "eraser") {
     state.penWidth = p.width ?? 3.5;
+    state.eraserMode = p.mode === "stroke" ? "stroke" : "partial";
     return;
   }
   state.penColor = p.color;
@@ -1911,7 +2172,7 @@ function applyInkPrefsToState(tool) {
 
 function persistCurrentInkPrefs() {
   if (state.tool === "eraser") {
-    inkPrefs.eraser = { width: state.penWidth };
+    inkPrefs.eraser = { width: state.penWidth, mode: state.eraserMode || "partial" };
     saveInkPrefs();
     return;
   }
@@ -1930,6 +2191,13 @@ function setArrowStyle(style) {
   state.arrowStyle = style === "free" ? "free" : "straight";
   updateInkPopoverSections();
   persistCurrentInkPrefs();
+}
+
+function setEraserMode(mode) {
+  state.eraserMode = mode === "stroke" ? "stroke" : "partial";
+  updateInkPopoverSections();
+  persistCurrentInkPrefs();
+  toast(state.eraserMode === "stroke" ? "線ごと消し" : "部分消し");
 }
 
 function updateToolUI() {
@@ -1961,19 +2229,27 @@ function updateInkPopoverSections() {
   const isArrow = state.tool === "arrow";
   const opacityBlock = $("#ink-opacity-block");
   const arrowBlock = $("#ink-arrow-mode");
+  const eraserBlock = $("#ink-eraser-mode");
   const title = $("#ink-style-popover .ink-style-title");
   if (opacityBlock) opacityBlock.hidden = isEraser;
-  // 直線 / 自由線は矢印ペン専用（他ツールでは完全非表示）
   if (arrowBlock) {
     arrowBlock.hidden = !isArrow;
     if (!isArrow) arrowBlock.setAttribute("hidden", "");
     else arrowBlock.removeAttribute("hidden");
+  }
+  if (eraserBlock) {
+    eraserBlock.hidden = !isEraser;
+    if (!isEraser) eraserBlock.setAttribute("hidden", "");
+    else eraserBlock.removeAttribute("hidden");
   }
   if (title) {
     title.textContent = isEraser ? "消しゴム" : isArrow ? "矢印" : "スタイル";
   }
   $$("[data-arrow-mode]").forEach((b) => {
     b.classList.toggle("active", b.dataset.arrowMode === (state.arrowStyle || "straight"));
+  });
+  $$("[data-eraser-mode]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.eraserMode === (state.eraserMode || "partial"));
   });
 }
 
@@ -2106,7 +2382,8 @@ function loadPanelPrefs() {
 function savePanelPrefs() {
   const prefs = {
     toolsCollapsed: document.getElementById("toolbar")?.classList.contains("collapsed") || false,
-    benchCollapsed: document.getElementById("bench-panel")?.classList.contains("collapsed") || false
+    benchCollapsed: document.getElementById("bench-panel")?.classList.contains("collapsed") || false,
+    actionsCollapsed: document.getElementById("action-bar")?.classList.contains("collapsed") || false
   };
   try { localStorage.setItem(PANEL_PREFS_KEY, JSON.stringify(prefs)); } catch (_) {}
 }
@@ -2115,9 +2392,11 @@ function applyPanelPrefs() {
   const prefs = loadPanelPrefs();
   const toolbar = document.getElementById("toolbar");
   const bench = document.getElementById("bench-panel");
+  const actions = document.getElementById("action-bar");
   toolbar?.classList.toggle("collapsed", Boolean(prefs.toolsCollapsed));
   if (!document.body.classList.contains("present-mode")) {
     bench?.classList.toggle("collapsed", Boolean(prefs.benchCollapsed));
+    actions?.classList.toggle("collapsed", Boolean(prefs.actionsCollapsed));
   }
   updatePanelToggles();
 }
@@ -2125,8 +2404,10 @@ function applyPanelPrefs() {
 function setPanelCollapsed(which, collapsed) {
   const toolbar = document.getElementById("toolbar");
   const bench = document.getElementById("bench-panel");
+  const actions = document.getElementById("action-bar");
   if (which === "tools") toolbar?.classList.toggle("collapsed", collapsed);
   if (which === "bench") bench?.classList.toggle("collapsed", collapsed);
+  if (which === "actions") actions?.classList.toggle("collapsed", collapsed);
   updatePanelToggles();
   savePanelPrefs();
   requestAnimationFrame(() => fitStage());
@@ -2135,10 +2416,14 @@ function setPanelCollapsed(which, collapsed) {
 function updatePanelToggles() {
   const toolsCollapsed = document.getElementById("toolbar")?.classList.contains("collapsed");
   const benchCollapsed = document.getElementById("bench-panel")?.classList.contains("collapsed");
+  const actionsCollapsed = document.getElementById("action-bar")?.classList.contains("collapsed");
   const expandTools = document.getElementById("btn-expand-tools");
   const expandBench = document.getElementById("btn-expand-bench");
+  const expandActions = document.getElementById("btn-expand-actions");
+  const inPresent = document.body.classList.contains("present-mode");
   const showTools = Boolean(toolsCollapsed);
-  const showBench = !document.body.classList.contains("present-mode") && Boolean(benchCollapsed);
+  const showBench = !inPresent && Boolean(benchCollapsed);
+  const showExpandActions = !inPresent && Boolean(actionsCollapsed);
 
   if (expandTools) {
     expandTools.hidden = false;
@@ -2149,6 +2434,11 @@ function updatePanelToggles() {
     expandBench.hidden = false;
     expandBench.classList.toggle("is-visible", showBench);
     expandBench.setAttribute("aria-hidden", showBench ? "false" : "true");
+  }
+  if (expandActions) {
+    expandActions.hidden = false;
+    expandActions.classList.toggle("is-visible", showExpandActions);
+    expandActions.setAttribute("aria-hidden", showExpandActions ? "false" : "true");
   }
   syncExpandButtonPositions();
   syncTabletQuickBar();
@@ -2163,10 +2453,12 @@ function pinchMidpoint(pts) {
 }
 
 function beginPinchGesture() {
+  // 描画中でも2本指なら線を破棄してズーム／パンへ（片手＋補助指）
   drawing = null;
   liveInkEl = null;
   eraserSession = null;
   dragPiece = null;
+  dragDrawing = null;
   hideMarquee();
   clearLongPress();
   const pts = [...activePointers.values()];
@@ -2174,6 +2466,7 @@ function beginPinchGesture() {
   pinchStartDist = dist(pts[0], pts[1]);
   pinchStartZoom = board().zoom;
   pinchLastMid = pinchMidpoint(pts);
+  renderDrawings();
 }
 
 function updatePinchGesture(e) {
@@ -2237,6 +2530,28 @@ function onViewportPointerDown(e) {
 
   if (dragPiece) return;
 
+  // 選択ツール：描き終わった線を1本ずつ掴んで移動
+  if (state.tool === "select" && activePointers.size === 1 && state.drawingsVisible !== false) {
+    const pt = clientToBoard(e.clientX, e.clientY);
+    const hit = hitTopDrawing(pt);
+    if (hit) {
+      e.preventDefault();
+      hidePieceActions();
+      selectedDrawingId = hit.id;
+      dragDrawing = {
+        id: hit.id,
+        pointerId: e.pointerId,
+        startBoard: pt,
+        origin: deepClone(hit),
+        moved: false
+      };
+      renderDrawings();
+      try { els.viewport.setPointerCapture(e.pointerId); } catch (_) {}
+      return;
+    }
+    if (selectedDrawingId) clearDrawingSelection();
+  }
+
   // ドラッグ消しゴム（なぞった部分だけ消す）
   if (state.tool === "eraser") {
     e.preventDefault();
@@ -2247,7 +2562,7 @@ function onViewportPointerDown(e) {
       lastHint: 0
     };
     const pt = clientToBoard(e.clientX, e.clientY);
-    if (eraseNearPoint(pt)) eraserSession.erased = true;
+    if (applyEraserAt(pt)) eraserSession.erased = true;
     noteEraserOverPiece(pt);
     try { els.viewport.setPointerCapture(e.pointerId); } catch (_) {}
     return;
@@ -2332,6 +2647,21 @@ function onViewportPointerMove(e) {
   // 2本指：ピンチズーム＋パン（画面移動）
   if (updatePinchGesture(e)) return;
 
+  // 描画の移動
+  if (dragDrawing && e.pointerId === dragDrawing.pointerId) {
+    e.preventDefault();
+    const pt = clientToBoard(e.clientX, e.clientY);
+    const dx = pt.x - dragDrawing.startBoard.x;
+    const dy = pt.y - dragDrawing.startBoard.y;
+    if (Math.hypot(dx, dy) > 2.5) dragDrawing.moved = true;
+    const d = board().drawings.find((x) => x.id === dragDrawing.id);
+    if (d) {
+      applyDrawingTranslation(d, dragDrawing.origin, dx, dy);
+      renderDrawings();
+    }
+    return;
+  }
+
   // 囲み選択ドラッグ
   if (marquee && e.pointerId === marquee.pointerId) {
     e.preventDefault();
@@ -2350,7 +2680,7 @@ function onViewportPointerMove(e) {
     const events = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [e];
     for (const ce of events) {
       const pt = clientToBoard(ce.clientX, ce.clientY);
-      if (eraseNearPoint(pt)) eraserSession.erased = true;
+      if (applyEraserAt(pt)) eraserSession.erased = true;
       noteEraserOverPiece(pt);
     }
     return;
@@ -2386,6 +2716,16 @@ function onViewportPointerUp(e) {
 
   if (activePointers.size < 2) {
     endPinchIfNeeded();
+  }
+
+  if (dragDrawing && e.pointerId === dragDrawing.pointerId) {
+    if (dragDrawing.moved) {
+      pushHistory();
+      scheduleSave();
+    }
+    dragDrawing = null;
+    renderDrawings();
+    return;
   }
 
   if (marquee && e.pointerId === marquee.pointerId) {
@@ -3561,18 +3901,21 @@ async function persist() {
 
 function updateSyncBadge(kind) {
   const b = els.syncBadge;
+  if (!b) return;
   b.classList.remove("cloud", "error");
+  b.textContent = "";
+  let label = "ローカル保存";
   if (kind === "cloud") {
-    b.textContent = "クラウド同期";
     b.classList.add("cloud");
+    label = "クラウド同期中";
   } else if (kind === "error") {
-    b.textContent = "同期エラー";
     b.classList.add("error");
+    label = "同期エラー";
   } else if (kind === "offline-cfg") {
-    b.textContent = "ローカル（未設定）";
-  } else {
-    b.textContent = "ローカル";
+    label = "ローカル保存（未設定）";
   }
+  b.title = label;
+  b.setAttribute("aria-label", label);
 }
 
 async function initFirebase() {
@@ -3669,6 +4012,9 @@ function bindEvents() {
   $$("[data-arrow-mode]").forEach((b) => {
     b.addEventListener("click", () => setArrowStyle(b.dataset.arrowMode));
   });
+  $$("[data-eraser-mode]").forEach((b) => {
+    b.addEventListener("click", () => setEraserMode(b.dataset.eraserMode));
+  });
   $("#ink-opacity")?.addEventListener("input", (e) => {
     setPenOpacity(e.target.value);
   });
@@ -3723,8 +4069,12 @@ function bindEvents() {
   els.btnLockPresent?.addEventListener("click", toggleLock);
   $("#btn-add-opponent")?.addEventListener("click", addOpponent);
   $("#btn-add-ball")?.addEventListener("click", addBall);
+  $("#btn-add-opponent-action")?.addEventListener("click", addOpponent);
+  $("#btn-add-ball-action")?.addEventListener("click", addBall);
   $("#btn-clear-pieces")?.addEventListener("click", clearPieces);
   $("#btn-select-all")?.addEventListener("click", selectAllPieces);
+  $("#btn-align-row")?.addEventListener("click", () => alignSelectedPieces("horizontal"));
+  $("#btn-align-col")?.addEventListener("click", () => alignSelectedPieces("vertical"));
   $("#btn-deselect-all")?.addEventListener("click", () => {
     clearMultiSelection();
     toast("選択を解除しました");
@@ -3739,6 +4089,8 @@ function bindEvents() {
   $("#btn-expand-tools")?.addEventListener("click", () => setPanelCollapsed("tools", false));
   $("#btn-collapse-bench")?.addEventListener("click", () => setPanelCollapsed("bench", true));
   $("#btn-expand-bench")?.addEventListener("click", () => setPanelCollapsed("bench", false));
+  $("#btn-collapse-actions")?.addEventListener("click", () => setPanelCollapsed("actions", true));
+  $("#btn-expand-actions")?.addEventListener("click", () => setPanelCollapsed("actions", false));
 
   // メンバー（1画面エディタ）
   $("#btn-members-clear")?.addEventListener("click", clearDraftMembers);
@@ -3778,18 +4130,31 @@ function bindEvents() {
   els.viewport.addEventListener("pointercancel", onViewportPointerUp);
   els.viewport.addEventListener("wheel", onWheel, { passive: false });
 
-  // ダブルタップによるページズームのみ抑止（ピンチズームは許可）
+  // ダブルタップ／ピンチによるページズーム抑止（ボード内ピンチは別途許可）
   let lastTouchEndAt = 0;
+  const blockPageZoom = (e) => {
+    if (e.cancelable) e.preventDefault();
+  };
+  document.addEventListener("gesturestart", blockPageZoom, { passive: false, capture: true });
+  document.addEventListener("gesturechange", blockPageZoom, { passive: false, capture: true });
+  document.addEventListener("gestureend", blockPageZoom, { passive: false, capture: true });
   document.addEventListener(
     "touchend",
     (e) => {
       const now = Date.now();
       if (now - lastTouchEndAt <= 320) {
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
       }
       lastTouchEndAt = now;
     },
     { passive: false, capture: true }
+  );
+  document.addEventListener(
+    "dblclick",
+    (e) => {
+      if (e.cancelable) e.preventDefault();
+    },
+    { capture: true }
   );
 
   // キーボード
@@ -3825,6 +4190,11 @@ function bindEvents() {
   });
 
   window.addEventListener("resize", () => fitStage());
+  window.addEventListener("orientationchange", () => {
+    // iPad 回転後にレイアウト寸法が遅れて変わることがある
+    requestAnimationFrame(() => fitStage());
+    setTimeout(() => fitStage(), 280);
+  });
   if (window.ResizeObserver) {
     new ResizeObserver(() => fitStage()).observe(els.viewport);
   }
