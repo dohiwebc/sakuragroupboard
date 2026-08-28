@@ -140,6 +140,8 @@ function createInitialState() {
     },
     templates: [],
     snapshots: [],
+    templatesUpdatedAt: 0,
+    snapshotsUpdatedAt: 0,
     // モードごとの Undo/Redo（今見ているモードだけ戻す）
     _hist: {
       attack: { stack: [], index: -1 },
@@ -215,6 +217,8 @@ let firestoreReady = false;
 let saveTimer = null;
 let suppressSave = false;
 let toastTimer = null;
+let libraryPersistQueue = Promise.resolve();
+let pendingLibraryPersist = null;
 
 // ポインタ操作
 let activePointers = new Map();
@@ -226,6 +230,7 @@ let dragPiece = null; // { id, offsetX, offsetY } or group drag
 let dragDrawing = null; // 描画1本の移動 { id, pointerId, startBoard, origin, moved }
 let selectedDrawingId = null;
 let benchDrag = null; // ベンチ→コートのドラッグ状態
+let playerSwapHighlightId = null; // 入れ替え対象の選手コマ
 let liveInkEl = null; // 描画中のライブSVG要素
 let eraserSession = null; // ドラッグ消しゴム用
 let selectedPieceId = null; // 相手・ボールの選択
@@ -1517,6 +1522,70 @@ function estimatePlayerBoardSize() {
   return { w, h: w * (7 / 5) };
 }
 
+/** 論理座標付近の選手コマ（excludeIds を除く） */
+function findPlayerPieceAtBoardPoint(x, y, excludeIds = []) {
+  const size = estimatePlayerBoardSize();
+  const rx = size.w / 2;
+  const ry = size.h / 2;
+  const exclude = new Set(excludeIds);
+  let best = null;
+  let bestDist = Infinity;
+  for (const p of board().pieces) {
+    if (p.kind !== "player") continue;
+    if (exclude.has(p.id)) continue;
+    const dx = Math.abs(p.x - x);
+    const dy = Math.abs(p.y - y);
+    if (dx > rx || dy > ry) continue;
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = p;
+    }
+  }
+  return best;
+}
+
+function setPlayerSwapTargetHighlight(id) {
+  if (playerSwapHighlightId === id) return;
+  if (playerSwapHighlightId) {
+    els.pieces
+      ?.querySelector(`[data-id="${playerSwapHighlightId}"]`)
+      ?.classList.remove("swap-target");
+  }
+  playerSwapHighlightId = id || null;
+  if (id) {
+    els.pieces?.querySelector(`[data-id="${id}"]`)?.classList.add("swap-target");
+  }
+}
+
+function clearPlayerSwapTargetHighlight() {
+  setPlayerSwapTargetHighlight(null);
+}
+
+/** ベンチの選手とコート上の選手を入れ替え（今のモードのみ） */
+function benchPlayerSwapWithCourt(benchName, targetPiece) {
+  if (!targetPiece || targetPiece.kind !== "player") return false;
+  if (targetPiece.name === benchName) return false;
+  if (board().pieces.some((p) => p.kind === "player" && p.name === benchName)) return false;
+
+  const x = targetPiece.x;
+  const y = targetPiece.y;
+  board().pieces = board().pieces.filter((p) => p.id !== targetPiece.id);
+  board().pieces.push({
+    id: uid(),
+    kind: "player",
+    name: benchName,
+    x,
+    y
+  });
+  pushHistory();
+  renderPieces();
+  renderPlayerPool();
+  seedEmptyModesFrom(state.currentMode);
+  scheduleSave();
+  return true;
+}
+
 /** 選択中の選手を横一列／縦一列に整列 */
 function alignSelectedPieces(axis) {
   const selected = board().pieces.filter(
@@ -1814,6 +1883,7 @@ function onPiecePointerDown(e) {
 
     if (overBench && singlePlayer && !dragPiece.isMulti) {
       el.style.opacity = "0.35";
+      clearPlayerSwapTargetHighlight();
       return;
     }
     el.style.opacity = "";
@@ -1837,6 +1907,16 @@ function onPiecePointerDown(e) {
       }
     }
 
+    if (singlePlayer && !dragPiece.isMulti) {
+      const dragged = board().pieces.find((x) => x.id === id);
+      if (dragged) {
+        const target = findPlayerPieceAtBoardPoint(dragged.x, dragged.y, [id]);
+        setPlayerSwapTargetHighlight(target?.id || null);
+      }
+    } else {
+      clearPlayerSwapTargetHighlight();
+    }
+
     if (selectedPieceId === id) {
       showPieceActions(piece, el);
     }
@@ -1853,6 +1933,7 @@ function onPiecePointerDown(e) {
     endPinchIfNeeded();
     setBenchDropHighlight(false);
     clearLongPress();
+    clearPlayerSwapTargetHighlight();
 
     const returnToBench = !dragPiece?.isMulti
       && piece.kind === "player"
@@ -1860,6 +1941,8 @@ function onPiecePointerDown(e) {
     const moved = dragPiece?.moved;
     const willToggle = dragPiece?.willToggle;
     const wasMulti = dragPiece?.isMulti || state.tool === "multiselect";
+    const startX = dragPiece?.startX;
+    const startY = dragPiece?.startY;
     dragPiece = null;
 
     if (returnToBench) {
@@ -1886,8 +1969,19 @@ function onPiecePointerDown(e) {
     if (piece.kind === "player") hidePieceActions();
 
     if (moved) {
-      hidePieceActions();
+      let swapped = false;
+      if (!wasMulti && piece.kind === "player") {
+        const target = findPlayerPieceAtBoardPoint(piece.x, piece.y, [id]);
+        if (target) {
+          piece.x = target.x;
+          piece.y = target.y;
+          target.x = startX;
+          target.y = startY;
+          swapped = true;
+        }
+      }
       pushHistory();
+      if (swapped) renderPieces();
       scheduleSave();
     }
   };
@@ -2008,7 +2102,15 @@ function onBenchPointerDown(e) {
     }
     if (benchDrag.dragging) {
       moveGhost(benchDrag.ghost, ev.clientX, ev.clientY);
-      setCourtDropHighlight(isOverCourt(ev.clientX, ev.clientY));
+      const overCourt = isOverCourt(ev.clientX, ev.clientY);
+      setCourtDropHighlight(overCourt);
+      if (overCourt) {
+        const pt = clientToBoard(ev.clientX, ev.clientY);
+        const target = findPlayerPieceAtBoardPoint(pt.x, pt.y);
+        setPlayerSwapTargetHighlight(target?.id || null);
+      } else {
+        clearPlayerSwapTargetHighlight();
+      }
     }
   };
 
@@ -2019,6 +2121,7 @@ function onBenchPointerDown(e) {
     try { btn.releasePointerCapture(ev.pointerId); } catch (_) {}
     btn.classList.remove("dragging-source");
     setCourtDropHighlight(false);
+    clearPlayerSwapTargetHighlight();
 
     const drag = benchDrag;
     benchDrag = null;
@@ -2029,7 +2132,12 @@ function onBenchPointerDown(e) {
     if (drag.dragging) {
       if (isOverCourt(ev.clientX, ev.clientY)) {
         const pt = clientToBoard(ev.clientX, ev.clientY);
-        addPlayerAt(drag.name, pt.x, pt.y);
+        const target = findPlayerPieceAtBoardPoint(pt.x, pt.y);
+        if (target) {
+          benchPlayerSwapWithCourt(drag.name, target);
+        } else {
+          addPlayerAt(drag.name, pt.x, pt.y);
+        }
       }
       return;
     }
@@ -3267,7 +3375,7 @@ function renderTemplateList() {
     list.appendChild(li);
   }
   bindListDragReorder(list, () => {
-    if (syncArrayOrderFromList(list, state.templates)) scheduleSave(true);
+    if (syncArrayOrderFromList(list, state.templates)) saveTemplatesLibrary();
   });
 }
 
@@ -3287,7 +3395,7 @@ function saveTemplate() {
   });
   els.templateName.value = "";
   renderTemplateList();
-  scheduleSave(true);
+  saveTemplatesLibrary();
   toast("3モードをセット保存しました");
 }
 
@@ -3302,7 +3410,7 @@ function overwriteTemplate(id) {
   t.updatedAt = Date.now();
   renderTemplateList();
   if (tplPreviewId === id) renderTemplatePreview({ animate: false });
-  scheduleSave(true);
+  saveTemplatesLibrary();
   toast(`「${t.name}」をセット上書きしました`);
 }
 
@@ -3333,7 +3441,7 @@ function overwriteTemplateCurrentMode(id) {
     });
     renderTemplatePreview({ animate: false });
   }
-  scheduleSave(true);
+  saveTemplatesLibrary();
   toast(`「${t.name}」の${MODE_LABEL[mode]}を上書きしました`);
 }
 
@@ -3349,7 +3457,7 @@ function duplicateTemplate(id) {
   copy.updatedAt = now;
   state.templates.splice(idx + 1, 0, copy);
   renderTemplateList();
-  scheduleSave(true);
+  saveTemplatesLibrary();
   toast(`「${copy.name}」を作成しました`);
 }
 
@@ -3615,7 +3723,7 @@ function renameTemplate(id) {
   renderTemplateList();
   const title = $("#tpl-preview-title");
   if (tplPreviewId === id && title) title.textContent = t.name;
-  scheduleSave(true);
+  saveTemplatesLibrary();
 }
 
 function deleteTemplate(id) {
@@ -3623,7 +3731,7 @@ function deleteTemplate(id) {
   state.templates = state.templates.filter((t) => t.id !== id);
   if (tplPreviewId === id) closeTemplatePreview();
   renderTemplateList();
-  scheduleSave(true);
+  saveTemplatesLibrary();
 }
 
 // ---------- スナップ ----------
@@ -3674,7 +3782,7 @@ function renderSnapshotList() {
     list.appendChild(li);
   }
   bindListDragReorder(list, () => {
-    if (syncArrayOrderFromList(list, state.snapshots)) scheduleSave(true);
+    if (syncArrayOrderFromList(list, state.snapshots)) saveSnapshotsLibrary();
   });
 }
 
@@ -3696,7 +3804,7 @@ function saveSnapshot() {
   });
   els.snapshotName.value = "";
   renderSnapshotList();
-  scheduleSave(true);
+  saveSnapshotsLibrary();
   toast("スナップを保存しました");
 }
 
@@ -3755,7 +3863,7 @@ function overwriteSnapshot(id) {
   s.updatedAt = Date.now();
   renderSnapshotList();
   if (snapPreviewId === id) openSnapshotPreview(id);
-  scheduleSave(true);
+  saveSnapshotsLibrary();
   toast(`「${s.name}」を上書きしました`);
 }
 
@@ -3793,7 +3901,7 @@ function renameSnapshot(id) {
   renderSnapshotList();
   const title = $("#snap-preview-title");
   if (snapPreviewId === id && title) title.textContent = s.name;
-  scheduleSave(true);
+  saveSnapshotsLibrary();
 }
 
 function deleteSnapshot(id) {
@@ -3801,7 +3909,7 @@ function deleteSnapshot(id) {
   state.snapshots = state.snapshots.filter((s) => s.id !== id);
   if (snapPreviewId === id) closeSnapshotPreview();
   renderSnapshotList();
-  scheduleSave(true);
+  saveSnapshotsLibrary();
 }
 
 function escapeHtml(str) {
@@ -3858,6 +3966,8 @@ function serializableState() {
     },
     templates: deepClone(state.templates),
     snapshots: deepClone(state.snapshots),
+    templatesUpdatedAt: state.templatesUpdatedAt || 0,
+    snapshotsUpdatedAt: state.snapshotsUpdatedAt || 0,
     updatedAt: Date.now()
   };
 }
@@ -3886,6 +3996,12 @@ function applyLoaded(data) {
     if (data.penColor) state.penColor = data.penColor;
     if (Array.isArray(data.templates)) state.templates = data.templates;
     if (Array.isArray(data.snapshots)) state.snapshots = data.snapshots;
+    if (typeof data.templatesUpdatedAt === "number") {
+      state.templatesUpdatedAt = data.templatesUpdatedAt;
+    }
+    if (typeof data.snapshotsUpdatedAt === "number") {
+      state.snapshotsUpdatedAt = data.snapshotsUpdatedAt;
+    }
 
     state._hist = {
       attack: emptyModeHist(),
@@ -3913,6 +4029,166 @@ function scheduleSave(immediate = false) {
   else saveTimer = setTimeout(run, 400);
 }
 
+/** テンプレ／スナップを即座に localStorage + Firestore へ */
+function saveTemplatesLibrary() {
+  persistLibrary({ templates: true });
+}
+
+function saveSnapshotsLibrary() {
+  persistLibrary({ snapshots: true });
+}
+
+function persistLibrary({ templates = false, snapshots = false } = {}) {
+  if (suppressSave) return libraryPersistQueue;
+  if (templates) state.templatesUpdatedAt = Date.now();
+  if (snapshots) state.snapshotsUpdatedAt = Date.now();
+  libraryPersistQueue = libraryPersistQueue
+    .then(() => persistLibraryNow({ templates, snapshots }))
+    .catch((e) => console.warn("Library persist queue failed", e));
+  return libraryPersistQueue;
+}
+
+async function persistLibraryNow({ templates = false, snapshots = false } = {}) {
+  if (suppressSave) return;
+
+  try {
+    let base;
+    try {
+      const raw = localStorage.getItem(LOCAL_KEY);
+      base = raw ? JSON.parse(raw) : serializableState();
+    } catch {
+      base = serializableState();
+    }
+    base.templates = deepClone(state.templates);
+    base.snapshots = deepClone(state.snapshots);
+    base.templatesUpdatedAt = state.templatesUpdatedAt || 0;
+    base.snapshotsUpdatedAt = state.snapshotsUpdatedAt || 0;
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(base));
+  } catch (e) {
+    console.warn("localStorage save failed", e);
+  }
+
+  if (!firestoreReady || !db) {
+    pendingLibraryPersist = {
+      templates: pendingLibraryPersist?.templates || templates,
+      snapshots: pendingLibraryPersist?.snapshots || snapshots
+    };
+    updateSyncBadge("local");
+    return;
+  }
+
+  try {
+    const { doc, setDoc } = await import(
+      "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js"
+    );
+    if (templates) {
+      await setDoc(doc(db, FIRESTORE_ROOT, "templates"), {
+        items: deepClone(state.templates),
+        updatedAt: state.templatesUpdatedAt || Date.now()
+      });
+    }
+    if (snapshots) {
+      await setDoc(doc(db, FIRESTORE_ROOT, "snapshots"), {
+        items: deepClone(state.snapshots),
+        updatedAt: state.snapshotsUpdatedAt || Date.now()
+      });
+    }
+    await setDoc(
+      doc(db, FIRESTORE_ROOT, "current"),
+      {
+        templates: deepClone(state.templates),
+        snapshots: deepClone(state.snapshots),
+        templatesUpdatedAt: state.templatesUpdatedAt || 0,
+        snapshotsUpdatedAt: state.snapshotsUpdatedAt || 0
+      },
+      { merge: true }
+    );
+    updateSyncBadge("cloud");
+  } catch (e) {
+    console.warn("Library Firestore save failed", e);
+    updateSyncBadge("error");
+  }
+}
+
+async function fetchRemoteLibrary() {
+  const result = {
+    templates: null,
+    templatesUpdatedAt: 0,
+    snapshots: null,
+    snapshotsUpdatedAt: 0
+  };
+  if (!db) return result;
+  try {
+    const { doc, getDoc } = await import(
+      "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js"
+    );
+    const tSnap = await getDoc(doc(db, FIRESTORE_ROOT, "templates"));
+    if (tSnap.exists()) {
+      const tData = tSnap.data();
+      if (Array.isArray(tData.items)) result.templates = tData.items;
+      result.templatesUpdatedAt = tData.updatedAt || 0;
+    }
+    const sSnap = await getDoc(doc(db, FIRESTORE_ROOT, "snapshots"));
+    if (sSnap.exists()) {
+      const sData = sSnap.data();
+      if (Array.isArray(sData.items)) result.snapshots = sData.items;
+      result.snapshotsUpdatedAt = sData.updatedAt || 0;
+    }
+  } catch (e) {
+    console.warn("fetchRemoteLibrary failed", e);
+  }
+  return result;
+}
+
+/** 盤面の新旧判定とは独立してテンプレ／スナップだけマージ */
+async function mergeRemoteLibrary() {
+  if (!db) return;
+  const remote = await fetchRemoteLibrary();
+  const localTplAt = state.templatesUpdatedAt || 0;
+  const localSnapAt = state.snapshotsUpdatedAt || 0;
+  let changed = false;
+
+  if (Array.isArray(remote.templates) && remote.templatesUpdatedAt > localTplAt) {
+    state.templates = remote.templates;
+    state.templatesUpdatedAt = remote.templatesUpdatedAt;
+    changed = true;
+  }
+  if (Array.isArray(remote.snapshots) && remote.snapshotsUpdatedAt > localSnapAt) {
+    state.snapshots = remote.snapshots;
+    state.snapshotsUpdatedAt = remote.snapshotsUpdatedAt;
+    changed = true;
+  }
+
+  if (changed) {
+    suppressSave = true;
+    try {
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(serializableState()));
+      renderTemplateList();
+      renderSnapshotList();
+    } catch (e) {
+      console.warn("mergeRemoteLibrary local save failed", e);
+    } finally {
+      suppressSave = false;
+    }
+  }
+}
+
+async function flushPendingLibraryPersist() {
+  const remote = await fetchRemoteLibrary();
+  const pending = pendingLibraryPersist;
+  pendingLibraryPersist = null;
+  const ops = { templates: false, snapshots: false };
+  if (pending?.templates || (state.templatesUpdatedAt || 0) > remote.templatesUpdatedAt) {
+    ops.templates = true;
+  }
+  if (pending?.snapshots || (state.snapshotsUpdatedAt || 0) > remote.snapshotsUpdatedAt) {
+    ops.snapshots = true;
+  }
+  if (ops.templates || ops.snapshots) {
+    await persistLibraryNow(ops);
+  }
+}
+
 async function persist() {
   const data = serializableState();
   try {
@@ -3932,8 +4208,14 @@ async function persist() {
     );
     await setDoc(doc(db, FIRESTORE_ROOT, "current"), data, { merge: false });
     // テンプレート・スナップも別ドキュメントに（サイズ対策）
-    await setDoc(doc(db, FIRESTORE_ROOT, "templates"), { items: data.templates, updatedAt: data.updatedAt });
-    await setDoc(doc(db, FIRESTORE_ROOT, "snapshots"), { items: data.snapshots, updatedAt: data.updatedAt });
+    await setDoc(doc(db, FIRESTORE_ROOT, "templates"), {
+      items: data.templates,
+      updatedAt: data.templatesUpdatedAt || data.updatedAt
+    });
+    await setDoc(doc(db, FIRESTORE_ROOT, "snapshots"), {
+      items: data.snapshots,
+      updatedAt: data.snapshotsUpdatedAt || data.updatedAt
+    });
     updateSyncBadge("cloud");
   } catch (e) {
     console.warn("Firestore save failed", e);
@@ -3975,20 +4257,19 @@ async function initFirebase() {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
 
+    const library = await fetchRemoteLibrary();
+
     const snap = await getDoc(doc(db, FIRESTORE_ROOT, "current"));
     if (snap.exists()) {
       const remote = snap.data();
-      // テンプレ・スナップが分離されている場合マージ
-      try {
-        const tSnap = await getDoc(doc(db, FIRESTORE_ROOT, "templates"));
-        if (tSnap.exists() && Array.isArray(tSnap.data().items)) {
-          remote.templates = tSnap.data().items;
-        }
-        const sSnap = await getDoc(doc(db, FIRESTORE_ROOT, "snapshots"));
-        if (sSnap.exists() && Array.isArray(sSnap.data().items)) {
-          remote.snapshots = sSnap.data().items;
-        }
-      } catch (_) {}
+      if (Array.isArray(library.templates)) {
+        remote.templates = library.templates;
+        remote.templatesUpdatedAt = library.templatesUpdatedAt;
+      }
+      if (Array.isArray(library.snapshots)) {
+        remote.snapshots = library.snapshots;
+        remote.snapshotsUpdatedAt = library.snapshotsUpdatedAt;
+      }
 
       const localRaw = localStorage.getItem(LOCAL_KEY);
       let useRemote = true;
@@ -4004,6 +4285,8 @@ async function initFirebase() {
       }
     }
     firestoreReady = true;
+    await mergeRemoteLibrary();
+    await flushPendingLibraryPersist();
     updateSyncBadge("cloud");
   } catch (e) {
     console.warn("Firebase init failed", e);

@@ -1251,6 +1251,11 @@ body.present-mode .main { grid-template-columns: 1fr; }
 
 .piece:active { cursor: grabbing; }
 .piece.dragging { z-index: 10; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+.piece-player.swap-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px rgba(255, 45, 85, 0.35);
+}
 .piece.locked { cursor: default; }
 
 .piece-player {
